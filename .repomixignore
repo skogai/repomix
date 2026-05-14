@@ -1,4 +1,4 @@
-node_modules
-.yarn
-.eslinttcache
-tests/integration-tests/fixtures
+# Add patterns to ignore here, one per line
+# Example:
+# *.log
+# tmp/
