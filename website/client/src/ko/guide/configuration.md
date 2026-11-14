@@ -1,3 +1,8 @@
+---
+title: 설정
+description: "JSON, JSONC, JSON5, JavaScript, TypeScript 파일로 출력 형식, 포함 및 무시 패턴, 고급 옵션을 포함한 Repomix 설정 방법을 설명합니다."
+---
+
 # 설정
 
 Repomix는 설정 파일 또는 명령줄 옵션을 사용하여 설정할 수 있습니다. 설정 파일을 사용하면 코드베이스의 처리 및 출력 방식을 사용자 정의할 수 있습니다.
@@ -86,10 +91,13 @@ JavaScript 설정 파일은 TypeScript와 동일하게 작동하며 `defineConfi
 | 옵션                             | 설명                                                                                                                         | 기본값                 |
 |----------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
 | `input.maxFileSize`              | 처리할 최대 파일 크기(바이트). 이 크기를 초과하는 파일은 건너뜁니다. 큰 바이너리 파일이나 데이터 파일을 제외하는 데 유용합니다 | `50000000`            |
+| `input.processors`               | 매칭되는 파일을 패키징하기 전에 외부 명령을 실행하여 변환하는 `{ pattern, command, timeout?, onError? }` 항목의 순서가 있는 배열입니다(예: JSON→TOON). 처음으로 일치하는 glob이 우선합니다. 임의의 명령을 실행하므로 로컬 CLI 실행(및 `--remote-trust-config`를 사용하는 원격 저장소)에서만 실행됩니다. [파일 프로세서](#파일-프로세서)를 참조하세요 | 미설정                 |
 | `output.filePath`                | 출력 파일 이름. XML, Markdown, 일반 텍스트 형식을 지원합니다                                                                | `"repomix-output.xml"` |
 | `output.style`                   | 출력 스타일(`xml`, `markdown`, `json`, `plain`). 각 형식은 다른 AI 도구에 대해 서로 다른 장점이 있습니다                          | `"xml"`                |
+| `output.filePathStyle`           | 출력에 파일 경로를 표시하는 방식 (`target-relative`는 각 대상 루트에 대한 상대 경로를 유지하고, `cwd-relative`는 현재 작업 디렉토리에 대한 상대 경로를 유지합니다) | `"target-relative"`    |
 | `output.parsableStyle`           | 선택한 스타일 스키마에 따라 출력을 이스케이프할지 여부. 더 나은 구문 분석이 가능하지만 토큰 수가 증가할 수 있습니다      | `false`                |
 | `output.compress`                | Tree-sitter를 사용하여 구조를 유지하면서 토큰 수를 줄이기 위해 지능적인 코드 추출을 수행할지 여부                         | `false`                |
+| `output.patterns`                | 파일별 포함 수준. `{ pattern, compress?, directoryStructureOnly? }` 항목의 순서가 있는 배열이며, 처음으로 일치하는 glob이 우선하여 해당 파일에 대한 전역 `output.compress`를 덮어씁니다. [파일별 포함 수준](#파일별-포함-수준)을 참조하세요 | 미설정                 |
 | `output.headerText`              | 파일 헤더에 포함할 사용자 정의 텍스트. AI 도구에 컨텍스트나 지침을 제공하는 데 유용합니다                                | `null`                 |
 | `output.instructionFilePath`     | AI 처리를 위한 상세한 사용자 정의 지침이 포함된 파일 경로                                                                  | `null`                 |
 | `output.fileSummary`             | 출력 시작 부분에 파일 수, 크기 및 기타 메트릭을 보여주는 요약 섹션을 포함할지 여부                                        | `true`                 |
@@ -101,6 +109,7 @@ JavaScript 설정 파일은 TypeScript와 동일하게 작동하며 `defineConfi
 | `output.truncateBase64`          | 토큰 수를 줄이기 위해 긴 base64 데이터 문자열(예: 이미지)을 자를지 여부                                                  | `false`                |
 | `output.copyToClipboard`         | 파일 저장 외에도 출력을 시스템 클립보드에 복사할지 여부                                                                    | `false`                |
 | `output.splitOutput`             | 파트당 최대 크기로 출력을 여러 번호가 매겨진 파일로 분할합니다 (예: ~1MB의 경우 `1000000`). CLI는 `500kb` 또는 `2mb`와 같이 읽기 쉬운 크기를 허용합니다. 각 파일이 제한 이하로 유지되고 단일 소스 파일이 파트 간에 분할되는 것을 방지합니다 | 미설정 |
+| `output.tokenBudget`             | 패키징된 출력이 이 토큰 수를 초과하면 0이 아닌 종료 코드로 실패합니다. CI/에이전트 컨텍스트 제한에 대한 가드 역할을 합니다. 출력은 여전히 생성됩니다 | 미설정 |
 | `output.topFilesLength`          | 요약에 표시할 상위 파일 수. 0으로 설정하면 요약이 표시되지 않습니다                                                        | `5`                    |
 | `output.includeEmptyDirectories` | 저장소 구조에 빈 디렉토리를 포함할지 여부                                                                                  | `false`                |
 | `output.includeFullDirectoryStructure` | `include` 패턴 사용 시, 포함된 파일만 처리하면서 완전한 디렉토리 트리(무시 패턴 준수)를 표시할지 여부. AI 분석을 위한 전체 저장소 컨텍스트 제공 | `false`                |
@@ -147,11 +156,15 @@ JavaScript 설정 파일은 TypeScript와 동일하게 작동하며 `defineConfi
 {
   "$schema": "https://repomix.com/schemas/latest/schema.json",
   "input": {
-    "maxFileSize": 50000000
+    "maxFileSize": 50000000,
+    // "processors": [
+    //   { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    // ]
   },
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
+    "filePathStyle": "target-relative",
     "parsableStyle": false,
     "compress": false,
     "headerText": "패키지된 파일의 사용자 정의 헤더 정보",
@@ -162,6 +175,10 @@ JavaScript 설정 파일은 TypeScript와 동일하게 작동하며 `defineConfi
     "removeEmptyLines": false,
     "topFilesLength": 5,
     "showLineNumbers": false,
+    // "patterns": [
+    //   { "pattern": "docs/**/*", "compress": true },
+    //   { "pattern": "website/**/*", "directoryStructureOnly": true }
+    // ],
     "truncateBase64": false,
     "copyToClipboard": false,
     "includeEmptyDirectories": false,
@@ -321,6 +338,93 @@ build/
 - 함수 본문과 구현 세부 사항 제거
 
 자세한 정보와 예시는 [코드 압축 가이드](code-compress)를 참조하세요.
+
+### 파일별 포함 수준
+
+`output.compress`는 모든 파일에 단일 수준을 적용하지만, `output.patterns`를 사용하면 설정 파일에서 **glob별로** 세부 수준을 제어할 수 있습니다. 각 항목은 glob으로 파일을 대상으로 지정하며(`include`/`ignore`와 동일한 방식으로 매칭됨), 일치하는 파일에 대해 전역 `output.compress` 설정을 덮어씁니다.
+
+```json5
+{
+  "output": {
+    "compress": false, // 전역 기본값이 catch-all 역할을 합니다
+    "patterns": [
+      { "pattern": "docs/**/*", "compress": true },
+      { "pattern": "website/**/*", "directoryStructureOnly": true }
+    ]
+  }
+}
+```
+
+각 파일은 다음 세 가지 수준 중 하나로 결정됩니다:
+
+- **전체 내용**(기본값): 파일의 전체 내용이 포함됩니다.
+- **압축**(`compress: true`): `output.compress`와 동일한 Tree-sitter 파이프라인을 통해 내용이 처리됩니다.
+- **디렉토리 구조만**(`directoryStructureOnly: true`): 파일이 디렉토리 구조에 나열되지만, 해당 내용 블록은 출력에서 완전히 생략됩니다.
+
+규칙:
+
+- 패턴은 배열 순서대로 평가되며, 주어진 파일에 대해 **처음으로 일치하는 패턴이 우선합니다**.
+- 일치한 패턴의 플래그는 전역 `output.compress` 설정을 덮어씁니다. 플래그를 설정하지 않고 일치하는 패턴은 해당 파일에 대해 **전체 내용**을 강제하며, 이는 전역 `compress`에서 특정 파일을 화이트리스트로 제외하는 데 유용합니다.
+- 동일한 패턴에 `directoryStructureOnly`와 `compress`가 모두 설정된 경우 `directoryStructureOnly`가 우선합니다.
+- 일치하는 패턴이 없으면 전역 동작이 적용됩니다(전체 내용, 또는 `output.compress`가 `true`인 경우 압축).
+
+이 옵션은 설정 파일 전용이며, 동등한 CLI 플래그는 없습니다.
+
+### 파일 프로세서
+
+`input.processors`는 파일이 패키징되기 **전에** 외부 명령을 실행하여 파일 내용을 변환합니다. 각 항목은 glob으로 파일을 대상으로 지정하며(`include`/`ignore`와 동일한 방식으로 매칭됨), 일치하는 파일의 내용을 명령의 표준 출력으로 대체합니다. 이는 토큰 수를 줄이거나 형식을 변환하는 데 유용합니다. 예를 들어 JSON을 [TOON](https://github.com/toon-format/toon)으로 변환하거나, SVG를 압축하거나, 노트북을 일반 스크립트로 변환하는 경우입니다.
+
+```json5
+{
+  "input": {
+    "processors": [
+      {
+        "pattern": "**/*.json",
+        "command": "npx @toon-format/cli {file}"
+      }
+    ]
+  }
+}
+```
+
+동작 방식:
+
+- Repomix는 일치하는 각 파일의 내용을 임시 파일에 기록하고, 명령의 `{file}` 자리표시자(placeholder)를 해당 경로로 치환합니다(이 자리표시자는 **필수**입니다).
+- 명령은 셸을 통해 실행되므로 파이프와 `npx` 같은 도구가 작동합니다. 표준 출력이 파일의 새 내용이 되며, 이후 다른 파일과 마찬가지로 나머지 파이프라인(보안 검사, 토큰 계산, 출력 생성)을 거칩니다.
+- 패턴은 배열 순서대로 평가되며 **처음으로 일치하는 패턴이 우선합니다** — 파일은 최대 하나의 프로세서로만 변환됩니다(체이닝 없음).
+
+프로세서별 옵션:
+
+- `timeout`: 명령을 기다리는 최대 시간(밀리초). 기본값: `60000`(60초). `npx`는 캐시가 비어 있을 때 패키지를 다운로드하는 데 추가 시간이 필요할 수 있습니다.
+- `onError`: 명령이 0이 아닌 상태로 종료되거나 시간이 초과될 때의 동작. `"fail"`(기본값)은 전체 패키징을 중단합니다; `"skip"`은 경고를 기록하고 파일의 원본 내용으로 대체합니다.
+
+예제 명령(각각 적절한 `pattern`과 짝을 이루는 `command` 값입니다):
+
+| 패턴 | `command` | 하는 일 |
+| --- | --- | --- |
+| `**/*.json` | `jq -c . {file}` | 공백을 제거하여 JSON을 압축 |
+| `**/*.json` | `npx @toon-format/cli {file}` | JSON을 [TOON](https://github.com/toon-format/toon)(간결하고 토큰 효율적인 포맷)으로 변환 |
+| `**/*.svg` | `npx svgo -i {file} -o -` | SVG 최소화 |
+| `**/*.ipynb` | `jupyter nbconvert --to script --stdout {file}` | Jupyter 노트북을 일반 Python 스크립트로 변환 |
+
+처음으로 일치하는 패턴이 우선하므로 파일당 하나의 프로세서만 적용하세요. 예를 들어 `**/*.json`에는 `jq`나 TOON 변환기 중 하나만 선택합니다. 명령은 변환된 내용을 표준 출력으로 써야 하며, 호출하는 도구는 `PATH`에서 사용할 수 있어야 합니다(`npx` 기반 명령은 최초 사용 시 도구를 다운로드합니다).
+
+::: warning 보안
+파일 프로세서는 설정 파일에서 **임의의 명령**을 실행하므로 엄격한 신뢰 모델을 따릅니다:
+
+- **로컬 CLI 실행에서만** 동작하며, 이때 Repomix는 작업 디렉터리의 설정 파일을 사용자 본인의 것으로 간주합니다 — npm 스크립트나 Makefile과 동일한 신뢰 경계입니다. 마찬가지로, 다른 사람에게서 받은 저장소 안에서 `repomix`를 실행할 때 **`repomix.config.json`을 먼저 검토하지 않으면**, 해당 프로세서 명령이 사용자의 컴퓨터에서 실행됩니다. 신뢰할 수 없는 저장소를 패키징하기 전에 설정 파일을 먼저 검토하세요.
+- 라이브러리 API(`pack()` / `runCli()`), MCP 서버, 호스팅되는 [repomix.com](https://repomix.com)에서는 **비활성화**되어 있어 이들 중 어느 것도 설정에서 명령을 실행할 수 없습니다.
+- 원격 저장소(`--remote`)의 경우, 복제된 저장소의 설정 — 그리고 그 프로세서 — 은 `--remote-trust-config`를 명시적으로 전달한 경우에만 신뢰됩니다. 전달하지 않으면 원격 설정 자체가 로드되지 않습니다.
+
+활성화된 프로세서는 시작 시 로그에 기록되므로, 낯선 설정에서 예상치 못한 프로세서가 있는지 확인할 수 있습니다. 명령은 시작 시와 오류 메시지에 그대로 출력되므로, 자격 증명은 명령에 직접 포함하지 말고 펼쳐지지 않은 채로 로그에 기록되는 환경 변수(예: `$TOKEN`)를 통해 참조하세요.
+:::
+
+참고:
+
+- **형식을 변경하는** 프로세서를 같은 파일에서 `output.compress`, `output.removeComments`, 또는 `output.patterns`의 `compress`와 함께 사용하는 것은 권장하지 않습니다: 이러한 단계는 파일의 원래 확장자를 기준으로 처리 방식을 결정하므로, 변환된 내용에 대해 잘못된 언어 핸들러가 실행될 수 있습니다. 같은 이유로 Markdown 출력에서는 코드 펜스도 원래 확장자로 표시됩니다(예: JSON→TOON으로 변환된 파일은 `json`으로 펜스됩니다). 압축은 최선의 노력으로 동작하며, 파싱에 실패하면 조용히 변환된 내용으로 대체됩니다.
+- `--watch`를 사용하면 일치하는 파일이 매번 다시 빌드될 때마다 재처리되며, 그때마다 명령이 다시 실행됩니다.
+- 시간이 초과되면 Repomix는 명령의 셸을 종료합니다. 명령이 자체적으로 오래 실행되는 백그라운드 프로세스를 생성한 경우, 해당 프로세스는 계속 실행된 채로 남아 있을 수 있습니다.
+- 프로세서는 텍스트 파일만 처리하며(바이너리 파일은 처리 전에 제외됨), 출력은 UTF-8로 읽습니다.
 
 ### Git 통합
 

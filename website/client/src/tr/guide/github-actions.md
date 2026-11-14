@@ -1,3 +1,8 @@
+---
+title: "Repomix'i GitHub Actions ile Kullanma"
+description: "Repomix’i GitHub Actions içinde otomatikleştirerek depoları yapay zeka analizi, CI iş akışları, artifact’ler, kod inceleme ve sıkıştırılmış çıktı için paketleyin."
+---
+
 # Repomix'i GitHub Actions ile Kullanma
 
 Repomix'i GitHub Actions iş akışlarınıza entegre ederek kod tabanınızın yapay zeka analizi için paketlenmesi sürecini otomatikleştirebilirsiniz. Bu yöntem; sürekli entegrasyon (CI), kod inceleme veya deponuzu LLM tabanlı araçlar için hazırlama amacıyla oldukça kullanışlıdır.
@@ -61,7 +66,7 @@ Paketlenmiş dosyayı sonraki iş akışı adımlarında kullanabilmek veya indi
     compress: true
 
 - name: Upload Repomix output
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@v7
   with:
     name: repomix-output
     path: repomix-output.xml
@@ -105,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Pack repository with Repomix
         uses: yamadashy/repomix/.github/actions/repomix@main
@@ -113,7 +118,7 @@ jobs:
           output: repomix-output.xml
 
       - name: Upload Repomix output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: repomix-output.xml
           path: repomix-output.xml

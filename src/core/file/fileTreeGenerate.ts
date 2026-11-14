@@ -1,4 +1,5 @@
 import nodepath from 'node:path';
+import { toPosixPath } from '../../shared/pathUtils.js';
 
 export interface TreeNode {
   name: string;
@@ -36,7 +37,10 @@ export const generateFileTree = (files: string[], emptyDirPaths: string[] = []):
 };
 
 const addPathToTree = (root: TreeNode, path: string, isDirectory: boolean): void => {
-  const parts = path.split(nodepath.sep);
+  // Paths arrive normalized to POSIX separators (globby output, buildFileDisplayPath),
+  // so split on "/" instead of the OS separator: on Windows path.sep is "\\", so a
+  // "/"-separated path would never split and the whole tree would collapse into a flat list.
+  const parts = toPosixPath(path).split(nodepath.posix.sep);
   let currentNode = root;
 
   for (let i = 0; i < parts.length; i++) {
@@ -152,7 +156,7 @@ export interface FilesByRoot {
  */
 const generateMultiRootSections = (
   filesByRoot: FilesByRoot[],
-  treeToStringFn: (tree: TreeNode, prefix: string) => string,
+  treeToStringFn: (tree: TreeNode, prefix: string, rootLabel: string) => string,
 ): string => {
   const sections: string[] = [];
 
@@ -162,7 +166,7 @@ const generateMultiRootSections = (
     }
 
     const tree = generateFileTree(files);
-    const treeContent = treeToStringFn(tree, '  ');
+    const treeContent = treeToStringFn(tree, '  ', rootLabel);
     sections.push(`[${rootLabel}]/\n${treeContent}`);
   }
 
@@ -192,8 +196,10 @@ export const generateTreeStringWithRoots = (filesByRoot: FilesByRoot[], emptyDir
  * For single root, returns the standard flat tree with line counts.
  * For multiple roots, each section is labeled with [rootLabel]/.
  *
- * @param filesByRoot Array of root directories with their files
- * @param lineCounts Map of file paths to line counts
+ * @param filesByRoot Array of root directories with their files (paths relative to each root)
+ * @param lineCounts Map of display file paths to line counts. With multiple roots the keys
+ *   are root-prefixed (`${rootLabel}/${filePath}`), matching the multi-root display paths
+ *   that processed files carry; with a single root they are the plain file paths.
  * @param emptyDirPaths Optional paths to empty directories
  */
 export const generateTreeStringWithRootsAndLineCounts = (
@@ -207,5 +213,8 @@ export const generateTreeStringWithRootsAndLineCounts = (
   }
 
   // Multiple roots: generate labeled sections
-  return generateMultiRootSections(filesByRoot, (tree, prefix) => treeToStringWithLineCounts(tree, lineCounts, prefix));
+  // Start the lookup path at the root label so files resolve to their root-prefixed keys
+  return generateMultiRootSections(filesByRoot, (tree, prefix, rootLabel) =>
+    treeToStringWithLineCounts(tree, lineCounts, prefix, rootLabel),
+  );
 };

@@ -1,6 +1,7 @@
 ---
 layout: home
 title: Repomix
+description: "로컬 또는 원격 저장소를 Claude, ChatGPT, Gemini, MCP, 코드 리뷰 워크플로에 적합한 AI 친화적 XML, Markdown, JSON, 일반 텍스트로 패키징합니다."
 titleTemplate: 코드베이스를 AI 친화적인 형식으로 패키징
 aside: false
 editLink: false
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: 보안 중심
-    details: Secretlint를 통합하여 민감한 정보를 감지하고 보호합니다.
+    details: Secretlint를 통합하여 알려진 자격 증명 형식과 일치하는 파일을 감지하고 출력에서 제외합니다.
 
   - icon: 📊
     title: 토큰 카운팅

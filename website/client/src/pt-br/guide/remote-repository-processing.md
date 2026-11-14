@@ -1,3 +1,8 @@
+---
+title: "Processamento de Repositório GitHub"
+description: "Empacote repositórios GitHub com o Repomix usando URLs completas, abreviação usuário/repo, branches, tags, commits, Docker e controles de confiança para configuração remota."
+---
+
 # Processamento de Repositório GitHub
 
 ## Uso Básico
@@ -10,6 +15,14 @@ repomix --remote https://github.com/user/repo
 # Usando atalho do GitHub
 repomix --remote user/repo
 ```
+
+Você também pode passar o atalho `owner/repo` diretamente, sem `--remote`:
+
+```bash
+repomix yamadashy/repomix
+```
+
+Como `owner/repo` também se parece com um caminho local relativo, o Repomix só o trata como um repositório remoto quando não existe nenhum arquivo ou diretório local com esse nome e o repositório está acessível no GitHub. Um caminho local existente sempre tem precedência; para forçar o tratamento local de um caminho no formato `owner/repo`, prefixe-o com `./` (por exemplo, `repomix ./owner/repo`). Se o argumento corresponder ao padrão mas o repositório não puder ser acessado (por exemplo, um repositório privado ou um erro de digitação), o Repomix volta a tratá-lo como um caminho local.
 
 ## Seleção de Branch e Commit
 
@@ -70,6 +83,22 @@ repomix --remote user/repo --remote-trust-config
 # Usando variável de ambiente
 REPOMIX_REMOTE_TRUST_CONFIG=true repomix --remote user/repo
 ```
+
+::: warning
+`--remote-trust-config` concede à configuração do repositório remoto o mesmo nível de confiança da sua própria máquina. Uma configuração confiável pode **executar comandos arbitrários** (via `input.processors`) e **ler arquivos locais fora do repositório** (por exemplo, via `output.instructionFilePath` ou padrões de inclusão que usam `../`). Use-a apenas para repositórios em que você confia totalmente e que já revisou, com o mesmo cuidado que teria antes de executar um `npm install` ou um `Makefile` vindo de uma fonte desconhecida.
+:::
+
+### Prompt de confirmação
+
+Quando você confia na configuração de um repositório em um terminal interativo, o repomix mostra a configuração que está prestes a ser executada e pede que você confirme antes de carregá-la:
+
+- **Sim, só desta vez**: confia apenas nesta execução.
+- **Sim, e não perguntar novamente para este repositório**: lembrado até que seus arquivos temporários sejam limpos, e apenas enquanto esse arquivo de configuração permanecer inalterado (um arquivo de configuração editado solicita confirmação novamente). Observe que isso cobre apenas o arquivo de configuração em si: uma configuração `.ts` / `.js` pode importar outros arquivos, e esses não fazem parte dessa verificação.
+- **Não**: aborta sem executar a configuração.
+
+O prompt é ignorado quando você passa `--force`, em shells não interativos como CI (a configuração é considerada confiável como antes, mantendo a automação existente funcionando), ou depois que você escolher sempre confiar nesse repositório.
+
+Para conhecer o modelo de confiança completo (o que uma configuração confiável pode fazer, como a configuração exibida é protegida contra adulteração e onde a decisão de "não perguntar novamente" é armazenada), veja [Segurança](/pt-br/guide/security#remote-repository-config-trust).
 
 Ao usar `--config` com `--remote`, um caminho absoluto é obrigatório:
 

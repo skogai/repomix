@@ -2,18 +2,34 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { type CliOptions, parseRemoteValue, runDefaultAction } from 'repomix';
+import { parseRemoteValue, runDefaultAction } from 'repomix';
 import type { PackOptions, PackProgressCallback, PackResult, ProcessPackResult } from '../../types.js';
 import { AppError } from '../../utils/errorHandler.js';
 import { logMemoryUsage } from '../../utils/logger.js';
 import { generateCacheKey } from './utils/cache.js';
 import { cleanupTempDirectory, copyOutputToCurrentDirectory, createTempDirectory } from './utils/fileUtils.js';
 import { cache } from './utils/sharedInstance.js';
+import { buildUntrustedPackCliOptions } from './utils/untrustedPackOptions.js';
+import { assertPublicHttpsRepoUrl } from './validateRemoteRepoUrl.js';
 
 const execFileAsync = promisify(execFile);
 
 async function cloneRepository(repoUrl: string, destPath: string, branch?: string): Promise<void> {
-  const args = ['clone', '--depth', '1', '--single-branch'];
+  // `assertPublicHttpsRepoUrl` only validates the URL the user supplied. Without
+  // the config below, git would still follow an HTTP 3xx from that (public,
+  // allowed) host to an internal one — e.g. a public https repo redirecting to
+  // `http://169.254.169.254/…` — re-introducing the SSRF after the check passed.
+  // Disallow redirects entirely, and pin the transport to https so a redirect
+  // cannot switch protocol to file:// / ext:: either.
+  const hardeningConfig = [
+    '-c',
+    'http.followRedirects=false',
+    '-c',
+    'protocol.allow=never',
+    '-c',
+    'protocol.https.allow=always',
+  ];
+  const args = [...hardeningConfig, 'clone', '--depth', '1', '--single-branch'];
   if (branch) {
     args.push('--branch', branch);
   }
@@ -49,27 +65,16 @@ export async function processRemoteRepo(
   // Clone the repository
   await onProgress?.('cloning');
   const parsed = parseRemoteValue(repoUrl);
+  // Enforce a public-https-only allowlist before invoking git. `parseRemoteValue`
+  // only checks the owner/repo shape, so without this a user could pass
+  // file:// (local file read) or http(s):// to an internal host (SSRF).
+  await assertPublicHttpsRepoUrl(parsed.repoUrl);
   const tempDirPath = await createTempDirectory();
   const outputFilePath = `repomix-output-${randomUUID()}.txt`;
 
-  // Create CLI options for runDefaultAction (no 'remote' needed since we clone ourselves)
-  const cliOptions = {
-    output: outputFilePath,
-    style: format,
-    parsableStyle: options.outputParsable,
-    removeComments: options.removeComments,
-    removeEmptyLines: options.removeEmptyLines,
-    outputShowLineNumbers: options.showLineNumbers,
-    fileSummary: options.fileSummary,
-    directoryStructure: options.directoryStructure,
-    compress: options.compress,
-    securityCheck: false,
-    topFilesLen: 10,
-    include: options.includePatterns,
-    ignore: options.ignorePatterns,
-    quiet: true,
-    skipLocalConfig: true, // Prevent loading config files from untrusted cloned repositories
-  } as CliOptions;
+  // CLI options for runDefaultAction (no 'remote' needed since we clone ourselves).
+  // The clone is untrusted, same as an uploaded archive in processZipFile.ts.
+  const cliOptions = buildUntrustedPackCliOptions({ outputFilePath, format, options, securityCheck: false });
 
   try {
     // Log memory usage before processing

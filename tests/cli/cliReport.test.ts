@@ -1,26 +1,33 @@
 import path from 'node:path';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { reportCompletion, reportSecurityCheck, reportSummary, reportTopFiles } from '../../src/cli/cliReport.js';
+import {
+  getDisplayPath,
+  reportCompletion,
+  reportResults,
+  reportSecurityCheck,
+  reportSummary,
+  reportTopFiles,
+} from '../../src/cli/cliReport.js';
 import type { SuspiciousFileResult } from '../../src/core/security/securityCheck.js';
 import type { PackResult } from '../../src/index.js';
 import { logger } from '../../src/shared/logger.js';
+import { tagColors } from '../testing/cliDoubles.js';
+import { silenceLogger } from '../testing/loggerDoubles.js';
 import { createMockConfig } from '../testing/testUtils.js';
-
-vi.mock('../../src/shared/logger');
-vi.mock('picocolors', () => ({
-  default: {
-    dim: (str: string) => `DIM:${str}`,
-    green: (str: string) => `GREEN:${str}`,
-    yellow: (str: string) => `YELLOW:${str}`,
-    red: (str: string) => `RED:${str}`,
-    cyan: (str: string) => `CYAN:${str}`,
-    underline: (str: string) => `UNDERLINE:${str}`,
-  },
-}));
 
 describe('cliReport', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    silenceLogger();
+    tagColors();
+  });
+
+  describe('getDisplayPath', () => {
+    test('should keep paths in a sibling directory with the same prefix absolute', () => {
+      const cwd = path.join(path.parse(process.cwd()).root, 'workspace', 'app');
+      const siblingPath = path.join(path.dirname(cwd), 'application', 'output.xml');
+
+      expect(getDisplayPath(siblingPath, cwd)).toBe(siblingPath);
+    });
   });
 
   describe('reportSummary', () => {
@@ -197,8 +204,7 @@ describe('cliReport', () => {
       // separate logger.log calls — otherwise an unrelated line could satisfy each.
       const calls = (logger.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
       const outputLine = calls.find((line) => line.includes('skill directory'));
-      expect(outputLine).toBeDefined();
-      expect(outputLine).toContain(expectedRelative);
+      expect(outputLine).toBe(`       Output: ${expectedRelative} DIM:(skill directory)`);
     });
 
     test('should print first…last paths and part count for split outputs', () => {
@@ -228,9 +234,7 @@ describe('cliReport', () => {
       // first … last (3 parts)
       const calls = (logger.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
       const outputLine = calls.find((line) => line.includes('repomix-output.1.xml'));
-      expect(outputLine).toBeDefined();
-      expect(outputLine).toContain('repomix-output.3.xml');
-      expect(outputLine).toContain('3 parts');
+      expect(outputLine).toBe('       Output: repomix-output.1.xml DIM:… repomix-output.3.xml DIM:(3 parts)');
     });
 
     test('should print summary with security check disabled', () => {
@@ -399,5 +403,53 @@ describe('cliReport', () => {
       expect(logger.log).toHaveBeenCalledWith('GREEN:🎉 All Done!');
       expect(logger.log).toHaveBeenCalledWith('Your repository has been successfully packed.');
     });
+  });
+});
+
+describe('reportResults token count tree', () => {
+  const packResult: PackResult = {
+    totalFiles: 1,
+    totalCharacters: 10,
+    totalTokens: 3,
+    fileCharCounts: { 'file.txt': 10 },
+    fileTokenCounts: { 'file.txt': 3 },
+    suspiciousFilesResults: [],
+    suspiciousGitDiffResults: [],
+    suspiciousGitLogResults: [],
+    processedFiles: [],
+    safeFilePaths: ['file.txt'],
+    gitDiffTokenCount: 0,
+    gitLogTokenCount: 0,
+    skippedFiles: [],
+  };
+
+  beforeEach(() => {
+    silenceLogger();
+  });
+
+  test('should show the tree for a zero threshold', () => {
+    const reportTokenCountTree = vi.fn();
+    reportResults(
+      '/test/project',
+      packResult,
+      createMockConfig({ output: { tokenCountTree: 0 } }),
+      {},
+      { reportTokenCountTree },
+    );
+
+    expect(reportTokenCountTree).toHaveBeenCalledOnce();
+  });
+
+  test('should not show the tree when it is disabled', () => {
+    const reportTokenCountTree = vi.fn();
+    reportResults(
+      '/test/project',
+      packResult,
+      createMockConfig({ output: { tokenCountTree: false } }),
+      {},
+      { reportTokenCountTree },
+    );
+
+    expect(reportTokenCountTree).not.toHaveBeenCalled();
   });
 });

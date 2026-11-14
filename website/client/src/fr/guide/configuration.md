@@ -1,3 +1,8 @@
+---
+title: "Configuration"
+description: "Configurez Repomix avec des fichiers JSON, JSONC, JSON5, JavaScript ou TypeScript, y compris les formats de sortie, motifs include et ignore, et options avancées."
+---
+
 # Configuration
 
 Repomix peut être configuré à l'aide d'un fichier de configuration ou d'options en ligne de commande. Le fichier de configuration vous permet de personnaliser divers aspects du traitement et de la sortie de votre base de code.
@@ -86,10 +91,13 @@ Les fichiers de configuration JavaScript fonctionnent de la même manière que T
 | Option                           | Description                                                                                                                  | Défaut                |
 |----------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
 | `input.maxFileSize`              | Taille maximale des fichiers à traiter en octets. Les fichiers plus grands seront ignorés. Utile pour exclure les fichiers binaires volumineux ou les fichiers de données | `50000000`            |
+| `input.processors`               | Tableau ordonné d'entrées `{ pattern, command, timeout?, onError? }` qui exécutent une commande externe pour transformer les fichiers correspondants avant l'empaquetage (par ex. JSON→TOON). Le premier motif glob correspondant l'emporte. Exécute des commandes arbitraires, donc activé uniquement pour les exécutions CLI locales (et les dépôts distants avec `--remote-trust-config`). Voir [Processeurs de fichiers](#processeurs-de-fichiers) | Non défini |
 | `output.filePath`                | Nom du fichier de sortie. Prend en charge les formats XML, Markdown et texte brut                                            | `"repomix-output.xml"` |
 | `output.style`                   | Style de sortie (`xml`, `markdown`, `json`, `plain`). Chaque format a ses propres avantages pour différents outils d'IA              | `"xml"`                |
+| `output.filePathStyle`           | Façon dont les chemins de fichiers sont affichés dans la sortie (`target-relative` conserve les chemins relatifs à chaque racine cible, `cwd-relative` conserve les chemins relatifs au répertoire de travail courant) | `"target-relative"`    |
 | `output.parsableStyle`           | Indique s'il faut échapper la sortie selon le schéma de style choisi. Permet une meilleure analyse mais peut augmenter le nombre de tokens | `false`                |
 | `output.compress`                | Indique s'il faut effectuer une extraction intelligente du code à l'aide de Tree-sitter pour réduire le nombre de tokens tout en préservant la structure | `false`                |
+| `output.patterns`                | Niveaux d'inclusion par fichier. Un tableau ordonné d'entrées `{ pattern, compress?, directoryStructureOnly? }` ; le premier motif glob correspondant l'emporte et remplace le réglage global `output.compress` pour ce fichier. Voir [Niveaux d'inclusion par fichier](#niveaux-d-inclusion-par-fichier) | Non défini |
 | `output.headerText`              | Texte personnalisé à inclure dans l'en-tête du fichier. Utile pour fournir du contexte ou des instructions aux outils d'IA   | `null`                 |
 | `output.instructionFilePath`     | Chemin vers un fichier contenant des instructions personnalisées détaillées pour le traitement par l'IA                      | `null`                 |
 | `output.fileSummary`             | Indique s'il faut inclure une section de résumé au début montrant le nombre de fichiers, les tailles et d'autres métriques  | `true`                 |
@@ -101,6 +109,7 @@ Les fichiers de configuration JavaScript fonctionnent de la même manière que T
 | `output.truncateBase64`          | Indique s'il faut tronquer les chaînes de données base64 longues (par exemple, les images) pour réduire le nombre de tokens | `false`                |
 | `output.copyToClipboard`         | Indique s'il faut copier la sortie dans le presse-papiers système en plus de sauvegarder le fichier                         | `false`                |
 | `output.splitOutput`             | Diviser la sortie en plusieurs fichiers numérotés par taille maximale par partie (ex., `1000000` pour ~1Mo). CLI accepte des tailles lisibles comme `500kb` ou `2mb`. Maintient chaque fichier sous la limite et évite de diviser les fichiers sources entre les parties | Non défini |
+| `output.tokenBudget`             | Échouer avec un code de sortie non nul lorsque la sortie empaquetée dépasse ce nombre de jetons. Agit comme un garde-fou pour les limites de contexte CI/agent ; la sortie est tout de même générée | Non défini |
 | `output.topFilesLength`          | Nombre de fichiers principaux à afficher dans le résumé. Si défini à 0, aucun résumé ne sera affiché                        | `5`                    |
 | `output.includeEmptyDirectories` | Indique s'il faut inclure les répertoires vides dans la structure du dépôt                                                   | `false`                |
 | `output.includeFullDirectoryStructure` | Lors de l'utilisation de motifs `include`, indique s'il faut afficher l'arbre de répertoires complet (en respectant les motifs ignore) tout en ne traitant que les fichiers inclus. Fournit un contexte complet du dépôt pour l'analyse IA | `false`                |
@@ -147,11 +156,15 @@ Voici un exemple de fichier de configuration complet (`repomix.config.json`) :
 {
   "$schema": "https://repomix.com/schemas/latest/schema.json",
   "input": {
-    "maxFileSize": 50000000
+    "maxFileSize": 50000000,
+    // "processors": [
+    //   { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    // ]
   },
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
+    "filePathStyle": "target-relative",
     "parsableStyle": false,
     "compress": false,
     "headerText": "Informations d'en-tête personnalisées pour le fichier compressé.",
@@ -162,6 +175,10 @@ Voici un exemple de fichier de configuration complet (`repomix.config.json`) :
     "removeEmptyLines": false,
     "topFilesLength": 5,
     "showLineNumbers": false,
+    // "patterns": [
+    //   { "pattern": "docs/**/*", "compress": true },
+    //   { "pattern": "website/**/*", "directoryStructureOnly": true }
+    // ],
     "truncateBase64": false,
     "copyToClipboard": false,
     "includeEmptyDirectories": false,
@@ -321,6 +338,93 @@ Avantages principaux :
 - Supprime les corps de fonctions et les détails d'implémentation
 
 Pour plus de détails et d'exemples, consultez le [Guide de compression du code](code-compress).
+
+### Niveaux d'inclusion par fichier
+
+Alors que `output.compress` applique un seul niveau à chaque fichier, `output.patterns` vous permet de contrôler le niveau de détail **par motif glob** depuis votre fichier de configuration. Chaque entrée cible des fichiers par motif glob (mis en correspondance de la même manière que `include`/`ignore`) et remplace le réglage global `output.compress` pour les fichiers correspondants.
+
+```json5
+{
+  "output": {
+    "compress": false, // la valeur par défaut globale sert de cas par défaut
+    "patterns": [
+      { "pattern": "docs/**/*", "compress": true },
+      { "pattern": "website/**/*", "directoryStructureOnly": true }
+    ]
+  }
+}
+```
+
+Chaque fichier est résolu vers l'un des trois niveaux :
+
+- **Contenu complet** (par défaut) : le contenu complet du fichier est inclus.
+- **Compressé** (`compress: true`) : le contenu passe par le même pipeline Tree-sitter que `output.compress`.
+- **Structure de répertoires uniquement** (`directoryStructureOnly: true`) : le fichier est listé dans la structure des répertoires, mais son bloc de contenu est entièrement omis de la sortie.
+
+Les règles :
+
+- Les motifs sont évalués dans l'ordre du tableau et le **premier motif correspondant l'emporte** pour un fichier donné.
+- Les indicateurs d'un motif correspondant remplacent le réglage global `output.compress`. Un motif qui correspond sans définir d'indicateur force le **contenu complet** pour ce fichier, ce qui est pratique pour mettre des fichiers sur liste blanche en dehors d'un `compress` global.
+- `directoryStructureOnly` a la priorité sur `compress` lorsque les deux sont définis sur le même motif.
+- Si aucun motif ne correspond, le comportement global s'applique (contenu complet, ou compressé lorsque `output.compress` vaut `true`).
+
+Cette option est disponible uniquement dans le fichier de configuration ; il n'existe pas d'option CLI équivalente.
+
+### Processeurs de fichiers
+
+`input.processors` exécute une commande externe pour transformer le contenu d'un fichier **avant** qu'il ne soit empaqueté. Chaque entrée cible des fichiers par motif glob (mis en correspondance de la même manière que `include`/`ignore`) et remplace le contenu des fichiers correspondants par la sortie standard de la commande. Ceci est utile pour les transformations réduisant le nombre de tokens ou convertissant le format, par exemple la conversion de JSON en [TOON](https://github.com/toon-format/toon), la minification de SVG, ou la conversion de notebooks en scripts simples.
+
+```json5
+{
+  "input": {
+    "processors": [
+      {
+        "pattern": "**/*.json",
+        "command": "npx @toon-format/cli {file}"
+      }
+    ]
+  }
+}
+```
+
+Fonctionnement :
+
+- Repomix écrit le contenu de chaque fichier correspondant dans un fichier temporaire et substitue son chemin au marqueur `{file}` dans la commande (le marqueur est **obligatoire**).
+- La commande s'exécute via le shell, donc les pipes et les outils comme `npx` fonctionnent. Sa sortie standard devient le nouveau contenu du fichier, qui traverse ensuite le reste du pipeline (vérification de sécurité, comptage de tokens et génération de la sortie) comme tout autre fichier.
+- Les motifs sont évalués dans l'ordre du tableau et le **premier motif correspondant l'emporte** — un fichier est transformé par au plus un processeur (pas d'enchaînement).
+
+Options par processeur :
+
+- `timeout` : Temps maximal en millisecondes à attendre pour la commande. Par défaut : `60000` (60s). Notez que `npx` peut avoir besoin de temps supplémentaire pour télécharger un paquet avec un cache froid.
+- `onError` : Que faire lorsque la commande se termine avec un statut non nul ou expire. `"fail"` (par défaut) interrompt tout l'empaquetage ; `"skip"` enregistre un avertissement et revient au contenu original du fichier.
+
+Exemples de commandes (chacune est une valeur `command` associée à un `pattern` approprié) :
+
+| Motif | `command` | Ce qu'elle fait |
+| --- | --- | --- |
+| `**/*.json` | `jq -c . {file}` | Compacter le JSON en supprimant les espaces |
+| `**/*.json` | `npx @toon-format/cli {file}` | Convertir le JSON en [TOON](https://github.com/toon-format/toon), un format compact et économe en tokens |
+| `**/*.svg` | `npx svgo -i {file} -o -` | Minifier le SVG |
+| `**/*.ipynb` | `jupyter nbconvert --to script --stdout {file}` | Convertir un notebook Jupyter en un simple script Python |
+
+Comme le premier motif correspondant l'emporte, n'appliquez qu'un seul processeur par fichier — par exemple, choisissez soit `jq`, soit le convertisseur TOON pour `**/*.json`. La commande doit écrire le contenu transformé sur la sortie standard, et l'outil qu'elle invoque doit être disponible dans votre `PATH` (les commandes basées sur `npx` téléchargent l'outil lors de la première utilisation).
+
+::: warning Sécurité
+Les processeurs de fichiers exécutent des **commandes arbitraires** depuis votre fichier de configuration, ils suivent donc un modèle de confiance strict :
+
+- Ils s'exécutent **uniquement lors des exécutions CLI locales**, où Repomix considère que la configuration présente dans votre répertoire de travail vous appartient — la même limite de confiance qu'un script npm ou qu'un Makefile. De même, si vous exécutez `repomix` dans un dépôt obtenu auprès de quelqu'un d'autre **sans avoir d'abord examiné son `repomix.config.json`**, ses commandes de processeur s'exécuteront sur votre machine. Examinez la configuration des dépôts non fiables avant de les empaqueter.
+- Ils sont **désactivés** pour l'API de bibliothèque (`pack()` / `runCli()`), le serveur MCP et le [repomix.com](https://repomix.com) hébergé, de sorte qu'aucun d'entre eux ne peut exécuter de commandes depuis une configuration.
+- Pour les dépôts distants (`--remote`), la configuration du dépôt cloné — et donc ses processeurs — n'est fiable que lorsque vous passez explicitement `--remote-trust-config`. Sans cela, la configuration distante n'est même pas chargée.
+
+Les processeurs actifs sont journalisés au démarrage afin que les processeurs inattendus provenant d'une configuration inconnue soient visibles. Comme la commande est affichée au démarrage et dans les messages d'erreur, référencez les identifiants via des variables d'environnement (par ex. `$TOKEN`), qui sont journalisées sans être développées, plutôt que de les inclure directement dans la commande.
+:::
+
+Remarques :
+
+- Combiner un processeur **qui modifie le format** avec `output.compress`, `output.removeComments`, ou un `compress` de `output.patterns` sur le même fichier n'est pas recommandé : ces étapes sont sélectionnées selon l'extension d'origine du fichier, elles appliqueraient donc le mauvais gestionnaire de langage au contenu transformé. Pour la même raison, la sortie Markdown étiquette le bloc de code selon l'extension d'origine (par ex. un fichier JSON→TOON est balisé comme `json`). La compression est faite au mieux et revient silencieusement au contenu transformé en cas d'échec d'analyse.
+- Avec `--watch`, les fichiers correspondants sont retraités à chaque reconstruction, ce qui réexécute la commande à chaque fois.
+- En cas de délai dépassé, Repomix termine le shell de la commande ; une commande qui génère ses propres processus d'arrière-plan de longue durée peut les laisser tourner.
+- Les processeurs ne voient que les fichiers texte (les fichiers binaires sont exclus avant le traitement), et leur sortie est lue en UTF-8.
 
 ### Intégration Git
 

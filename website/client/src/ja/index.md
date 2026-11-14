@@ -1,6 +1,7 @@
 ---
 layout: home
 title: Repomix
+description: ローカルまたはリモートのリポジトリをClaude、ChatGPT、Gemini、MCP、コードレビュー向けのAIフレンドリーなXML、Markdown、JSON、プレーンテキストに変換します。
 titleTemplate: コードベースをAIフレンドリーな形式にパッケージング
 aside: false
 editLink: false
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: セキュリティ重視
-    details: Secretlintを組み込み、機密情報の検出と除外
+    details: Secretlintを組み込み、既知の認証情報形式に一致するファイルを検出して出力から除外
 
   - icon: 📊
     title: トークンカウント

@@ -1,3 +1,8 @@
+---
+title: GitHub Actions에서 Repomix 사용하기
+description: "GitHub Actions에서 Repomix를 자동화해 AI 분석, CI 워크플로, 아티팩트, 코드 리뷰, 압축 출력용 저장소 패키징을 수행합니다."
+---
+
 # GitHub Actions에서 Repomix 사용하기
 
 GitHub Actions 워크플로우에 Repomix를 통합하면 AI 분석을 위한 코드베이스 패킹을 자동화할 수 있습니다. 이는 CI, 코드 리뷰, LLM 도구 준비 등에 유용합니다.
@@ -61,7 +66,7 @@ GitHub Actions 워크플로우에 Repomix를 통합하면 AI 분석을 위한 �
     compress: true
 
 - name: Upload Repomix output
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@v7
   with:
     name: repomix-output
     path: repomix-output.xml
@@ -105,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Pack repository with Repomix
         uses: yamadashy/repomix/.github/actions/repomix@main
@@ -113,7 +118,7 @@ jobs:
           output: repomix-output.xml
 
       - name: Upload Repomix output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: repomix-output.xml
           path: repomix-output.xml

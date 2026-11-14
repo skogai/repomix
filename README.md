@@ -9,6 +9,17 @@
 ### [Warp, built for coding with multiple AI agents](https://go.warp.dev/repomix)
 [Available for MacOS, Linux, & Windows](https://go.warp.dev/repomix)<br>
 
+   <br>
+   <a href="https://coderabbit.link/repomix">
+      <picture>
+         <source media="(prefers-color-scheme: dark)" srcset="website/client/src/public/images/sponsors/coderabbit/dark.png">
+         <img alt="CodeRabbit sponsorship" width="400" src="website/client/src/public/images/sponsors/coderabbit/light.png">
+      </picture>
+   </a>
+
+### [CodeRabbit | AI Code Reviews](https://coderabbit.link/repomix)
+[Cut code review time & bugs in half, instantly.](https://coderabbit.link/repomix)<br>
+
 
 </div>
 
@@ -41,6 +52,7 @@
 [![npm](https://img.shields.io/npm/d18m/repomix)](https://www.npmjs.com/package/repomix)
 [![Actions Status](https://github.com/yamadashy/repomix/actions/workflows/ci.yml/badge.svg)](https://github.com/yamadashy/repomix/actions?query=workflow%3A"ci")
 [![codecov](https://codecov.io/github/yamadashy/repomix/graph/badge.svg?token=PYQHDJ5SHX)](https://codecov.io/github/yamadashy/repomix)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/yamadashy/repomix?utm_source=oss&utm_medium=github&utm_campaign=yamadashy%2Frepomix&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 [![Sponsors](https://img.shields.io/github/sponsors/yamadashy?logo=github)](https://github.com/sponsors/yamadashy)
 [![Discord](https://badgen.net/discord/online-members/wNYzTwZFku?icon=discord&label=discord)](https://discord.gg/wNYzTwZFku)
 
@@ -77,7 +89,7 @@ This wouldn't have been possible without all of you using and supporting Repomix
 - **Simple to Use**: You need just one command to pack your entire repository.
 - **Customizable**: Easily configure what to include or exclude.
 - **Git-Aware**: Automatically respects your `.gitignore`, `.ignore`, and `.repomixignore` files.
-- **Security-Focused**: Incorporates [Secretlint](https://github.com/secretlint/secretlint) for robust security checks to detect and prevent inclusion of sensitive information.
+- **Security-Focused**: Incorporates [Secretlint](https://github.com/secretlint/secretlint) to detect files matching known credential formats and leave them out of the output.
 - **Code Compression**: The `--compress` option uses [Tree-sitter](https://github.com/tree-sitter/tree-sitter) to extract key code elements, reducing token count while preserving structure.
 
 ## 🚀 Quick Start
@@ -614,6 +626,7 @@ Instruction
 |--------|-------------|
 | `-o, --output <file>` | Output file path (default: `repomix-output.xml`, use `"-"` for stdout) |
 | `--style <style>` | Output format: `xml`, `markdown`, `json`, or `plain` (default: `xml`) |
+| `--output-file-path-style <style>` | How file paths are shown in output: `target-relative` or `cwd-relative` (default: `target-relative`) |
 | `--parsable-style` | Escape special characters to ensure valid XML/Markdown (needed when output contains code that breaks formatting) |
 | `--compress` | Extract essential code structure (classes, functions, interfaces) using Tree-sitter parsing |
 | `--output-show-line-numbers` | Prefix each line with its line number in the output |
@@ -649,7 +662,7 @@ Instruction
 |--------|-------------|
 | `--remote <url>` | Clone and pack a remote repository (GitHub URL or `user/repo` format) |
 | `--remote-branch <name>` | Specific branch, tag, or commit to use (default: repository's default branch) |
-| `--remote-trust-config` | Trust and load config files from remote repositories (disabled by default for security) |
+| `--remote-trust-config` | Trust and load config files from remote repositories (disabled by default for security). On an interactive terminal, the config is shown and you are asked to confirm |
 
 #### Configuration Options
 
@@ -664,17 +677,25 @@ Instruction
 
 #### Token Count Options
 - `--token-count-encoding <encoding>`: Tokenizer model for counting: o200k_base (GPT-4o), cl100k_base (GPT-3.5/4), etc. (default: o200k_base)
+- `--token-budget <number>`: Fail with a non-zero exit code when the packed output exceeds N tokens. Useful as a guard in CI pipelines and agent workflows to keep output within a target model's context window. The output is still generated; only the exit code signals the overflow.
 
 #### MCP
 - `--mcp`: Run as Model Context Protocol server for AI tool integration
+- `--sandbox [dir]`: (with `--mcp`) confine the MCP server's file tools to a workspace directory (defaults to the working directory; e.g. `--sandbox path/to/project`) — every path is relative to that root, absolute/host paths are refused, and remote packing, skill generation, and attaching external outputs are disabled.
 
 #### Agent Skills Generation
 
 | Option | Description |
 |--------|-------------|
 | `--skill-generate [name]` | Generate Claude Agent Skills format output to `.claude/skills/<name>/` directory (name auto-generated if omitted) |
+| `--skill-project-name <name>` | Override the project name used in generated Skills descriptions |
 | `--skill-output <path>` | Specify skill output directory path directly (skips location prompt) |
-| `-f, --force` | Skip all confirmation prompts (e.g., skill directory overwrite) |
+| `-f, --force` | Skip all confirmation prompts (skill directory overwrite, remote config trust) |
+
+#### Watch Mode
+- `-w, --watch`: Watch for file changes and automatically re-pack. Debounces rapid changes (300ms) and logs a timestamp on each rebuild. Stop with `Ctrl+C`.
+
+  Watch mode only works with local directories, so it cannot be combined with `--remote`, a positional remote repository URL, `--stdout`, `--stdin`, `--split-output`, `--skill-generate`, or `--copy` (whether set on the command line or in your config file).
 
 #### Examples
 
@@ -708,6 +729,10 @@ repomix --remote https://github.com/user/repo/commit/836abcd7335137228ad77feb286
 
 # Remote repository with shorthand
 repomix --remote user/repo
+
+# Watch mode — automatically re-pack on file changes
+repomix --watch
+repomix -w --include "src/**/*.ts"
 ```
 
 ### Updating Repomix
@@ -765,7 +790,7 @@ repomix --remote https://github.com/yamadashy/repomix/commit/836abcd7335137228ad
 ```
 
 > [!NOTE]
-> For security, config files (`repomix.config.*`) in remote repositories are not loaded by default. This prevents untrusted repositories from executing code via config files. Your global config and CLI options are still applied. To trust a remote repository's config, use `--remote-trust-config` or set `REPOMIX_REMOTE_TRUST_CONFIG=true`.
+> For security, config files (`repomix.config.*`) in remote repositories are not loaded by default. This prevents untrusted repositories from executing code via config files. Your global config and CLI options are still applied. To trust a remote repository's config, use `--remote-trust-config` or set `REPOMIX_REMOTE_TRUST_CONFIG=true` — on an interactive terminal Repomix then shows that config and asks you to confirm before loading it. See [Remote Repository Config Trust](#remote-repository-config-trust).
 >
 > When using `--config` with `--remote`, an absolute path is required (e.g., `--config /home/user/repomix.config.json`).
 
@@ -826,6 +851,37 @@ interface Item {
 > [!NOTE]
 > This is an experimental feature that we'll be actively improving based on user feedback and real-world usage
 
+### Per-file Inclusion Levels (`output.patterns`)
+
+While `--compress` applies one level to every file, `output.patterns` lets you control the detail level **per glob** from your config file. Each entry targets files by glob (matched the same way as `include`/`ignore`) and overrides the global `output.compress` setting for matching files:
+
+```json5
+{
+  "output": {
+    "compress": false, // global default acts as the catch-all
+    "patterns": [
+      { "pattern": "docs/**/*", "compress": true },
+      { "pattern": "website/**/*", "directoryStructureOnly": true }
+    ]
+  }
+}
+```
+
+There are three levels:
+
+- **Full content** (default) — the file's full content is included.
+- **Compressed** (`compress: true`) — the content is passed through the same Tree-sitter pipeline as `--compress`.
+- **Directory-structure-only** (`directoryStructureOnly: true`) — the file is listed in the directory structure, but its content block is omitted from the output entirely.
+
+Semantics:
+
+- Patterns are evaluated in array order and the **first matching pattern wins** for a given file.
+- A matched pattern's flags override the global `output.compress` setting. A pattern that matches without setting either flag forces **full content** for that file (useful for whitelisting files out of a global `compress`).
+- `directoryStructureOnly` takes precedence over `compress` when both are set.
+- If no pattern matches, the global behavior applies (full content, or compressed when `output.compress` is `true`).
+
+This is a config-file-only option; there is no CLI flag for per-pattern levels.
+
 ### Token Count Optimization
 
 Understanding your codebase's token distribution is crucial for optimizing AI interactions. Use the `--token-count-tree` option to visualize token usage across your project:
@@ -885,6 +941,22 @@ Repomix supports the [Model Context Protocol (MCP)](https://modelcontextprotocol
 ```bash
 repomix --mcp
 ```
+
+#### Sandbox Mode
+
+By default the MCP server can read any path the host user can. That is convenient for a trusted local assistant, but too broad when the server is exposed to an untrusted client or agent. The `--sandbox` flag confines the server's file tools to a single workspace directory:
+
+```bash
+# Confine to the current working directory
+repomix --mcp --sandbox
+
+# Confine to a specific directory
+repomix --mcp --sandbox path/to/project
+```
+
+When sandbox mode is on, every path is relative to the workspace root (absolute, `~`, `..`, and Windows drive/UNC paths are refused, as are paths that resolve outside the root through symlinks), config files are not loaded, and only the read-only, root-confined tools are registered; remote packing, skill generation, and attaching external outputs are disabled. The raw file tools (`file_system_read_file`, `file_system_read_directory`) are available only in sandbox mode, where the workspace root bounds what they can reach. This is an application-level confinement of the tool surface, not an OS-level sandbox.
+
+Without `--sandbox`, `pack_codebase` loads and trusts the `repomix.config.*` in the directory it packs, the same as running `repomix` there from the command line. A config file is code: it can run when loaded and read files outside the repository. If your assistant may pack directories you don't trust, such as cloned third-party repositories, use `--sandbox`. See the [MCP Server guide](https://repomix.com/guide/mcp-server) for details.
 
 #### Configuring MCP Servers
 
@@ -979,6 +1051,7 @@ When running as an MCP server, Repomix provides the following tools:
     - `compress`: (Optional, default: false) Enable Tree-sitter compression to extract essential code signatures and structure while removing implementation details. Reduces token usage by ~70% while preserving semantic meaning. Generally not needed since grep_repomix_output allows incremental content retrieval. Use only when you specifically need the entire codebase content for large repositories.
     - `includePatterns`: (Optional) Specify files to include using fast-glob patterns. Multiple patterns can be comma-separated (e.g., "**/*.{js,ts}", "src/**,docs/**"). Only matching files will be processed.
     - `ignorePatterns`: (Optional) Specify additional files to exclude using fast-glob patterns. Multiple patterns can be comma-separated (e.g., "test/**,*.spec.js", "node_modules/**,dist/**"). These patterns supplement .gitignore, .ignore, and built-in exclusions.
+    - `outputPatterns`: (Optional) Per-file inclusion levels, mirroring the config-file `output.patterns` option. An array of `{ pattern, compress?, directoryStructureOnly? }` entries; the first matching pattern wins, `directoryStructureOnly` takes precedence over `compress`, and a match with neither flag forces full content (useful for exempting files from a global `compress`). Overrides any `output.patterns` from the target repository's `repomix.config.json`.
     - `topFilesLength`: (Optional, default: 10) Number of largest files by size to display in the metrics summary for codebase analysis.
 
 2. **attach_packed_output**: Attach an existing Repomix packed output file for AI analysis
@@ -988,7 +1061,7 @@ When running as an MCP server, Repomix provides the following tools:
   - Features:
     - Accepts either a directory containing a repomix-output.xml file or a direct path to an XML file
     - Registers the file with the MCP server and returns the same structure as the pack_codebase tool
-    - Provides secure access to existing packed outputs without requiring re-processing
+    - Provides access to existing packed outputs without requiring re-processing
     - Useful for working with previously generated packed repositories
 
 3. **pack_remote_repository**: Fetch, clone, and package a GitHub repository into a consolidated XML file for AI analysis
@@ -997,6 +1070,7 @@ When running as an MCP server, Repomix provides the following tools:
     - `compress`: (Optional, default: false) Enable Tree-sitter compression to extract essential code signatures and structure while removing implementation details. Reduces token usage by ~70% while preserving semantic meaning. Generally not needed since grep_repomix_output allows incremental content retrieval. Use only when you specifically need the entire codebase content for large repositories.
     - `includePatterns`: (Optional) Specify files to include using fast-glob patterns. Multiple patterns can be comma-separated (e.g., "**/*.{js,ts}", "src/**,docs/**"). Only matching files will be processed.
     - `ignorePatterns`: (Optional) Specify additional files to exclude using fast-glob patterns. Multiple patterns can be comma-separated (e.g., "test/**,*.spec.js", "node_modules/**,dist/**"). These patterns supplement .gitignore, .ignore, and built-in exclusions.
+    - `outputPatterns`: (Optional) Per-file inclusion levels, mirroring the config-file `output.patterns` option. An array of `{ pattern, compress?, directoryStructureOnly? }` entries; the first matching pattern wins, `directoryStructureOnly` takes precedence over `compress`, and a match with neither flag forces full content (useful for exempting files from a global `compress`).
     - `topFilesLength`: (Optional, default: 10) Number of largest files by size to display in the metrics summary for codebase analysis.
 
 4. **read_repomix_output**: Read the contents of a Repomix-generated output file. Supports partial reading with line range specification for large files.
@@ -1007,7 +1081,7 @@ When running as an MCP server, Repomix provides the following tools:
   - Features:
     - Specifically designed for web-based environments or sandboxed applications
     - Retrieves the content of previously generated outputs using their ID
-    - Provides secure access to packed codebase without requiring file system access
+    - Provides access to packed codebase without requiring file system access
     - Supports partial reading for large files
 
 5. **grep_repomix_output**: Search for patterns in a Repomix output file using grep-like functionality with JavaScript RegExp syntax
@@ -1024,21 +1098,18 @@ When running as an MCP server, Repomix provides the following tools:
     - Allows separate control of before/after context lines
     - Case-sensitive and case-insensitive search options
 
-6. **file_system_read_file**: Read a file from the local file system using an absolute path. Includes built-in security validation to detect and prevent access to files containing sensitive information.
+6. **file_system_read_file**: Read a file inside the sandbox workspace. Only available in [sandbox mode](#sandbox-mode) (`--sandbox`), where the workspace root bounds what it can reach.
   - Parameters:
-    - `path`: Absolute path to the file to read
-  - Security features:
-    - Implements security validation using [Secretlint](https://github.com/secretlint/secretlint)
-    - Prevents access to files containing sensitive information (API keys, passwords, secrets)
-    - Validates absolute paths to prevent directory traversal attacks
+    - `path`: Path to the file to read, relative to the workspace root (e.g. `src/index.ts`)
+  - Notes:
+    - Not registered without `--sandbox`
+    - Content matching known secret formats ([Secretlint](https://github.com/secretlint/secretlint)) is refused as an additional heuristic safeguard — the access boundary is the workspace root, not the scan
 
-7. **file_system_read_directory**: List the contents of a directory using an absolute path. Returns a formatted list showing files and subdirectories with clear indicators.
+7. **file_system_read_directory**: List the contents of a directory inside the sandbox workspace. Only available in [sandbox mode](#sandbox-mode) (`--sandbox`).
   - Parameters:
-    - `path`: Absolute path to the directory to list
+    - `path`: Path to the directory to list, relative to the workspace root (e.g. `.` or `src`)
   - Features:
     - Shows files and directories with clear indicators (`[FILE]` or `[DIR]`)
-    - Provides safe directory traversal with proper error handling
-    - Validates paths and ensures they are absolute
     - Useful for exploring project structure and understanding codebase organization
 
 ### Claude Code Plugins
@@ -1084,8 +1155,7 @@ Foundation plugin that provides AI-powered codebase analysis through MCP server 
 
 **Features:**
 - Pack local and remote repositories
-- Search through packed outputs
-- Read files with built-in security scanning (Secretlint)
+- Read and search packed outputs
 - Automatic Tree-sitter compression (~70% token reduction)
 
 **2. repomix-commands** (Slash Commands Plugin)
@@ -1138,7 +1208,7 @@ The agent automatically:
 - **Seamless Integration**: Claude can directly analyze codebases without manual preparation
 - **Natural Language**: Use conversational commands instead of remembering CLI syntax
 - **Always Latest**: Automatically uses `npx repomix@latest` for up-to-date features
-- **Security Built-in**: Automatic Secretlint scanning prevents sensitive data exposure
+- **Secret Scanning**: Secretlint flags files matching known credential formats so they are left out of the output
 - **Token Optimization**: Tree-sitter compression for large codebases
 
 For more details, see the plugin documentation in the `.claude/plugins/` directory.
@@ -1155,6 +1225,9 @@ repomix --skill-generate
 
 # Generate with custom Skills name
 repomix --skill-generate my-project-reference
+
+# Generate with a custom project name in Skills descriptions
+repomix --skill-generate --skill-project-name "My Project"
 
 # Generate from remote repository
 repomix --remote https://github.com/user/repo --skill-generate
@@ -1233,11 +1306,31 @@ Repomix provides a ready-to-use **Repomix Explorer** skill that enables AI codin
 
 #### Quick Install
 
-```bash
-npx add-skill yamadashy/repomix --skill repomix-explorer
+For Claude Code, install the official Repomix Explorer plugin:
+
+```text
+/plugin marketplace add yamadashy/repomix
+/plugin install repomix-explorer@repomix
 ```
 
-This command installs the skill to your AI assistant's skills directory (e.g., `.claude/skills/`), making it immediately available.
+For Codex, Cursor, OpenClaw, and other Agent Skills-compatible assistants, install the standalone skill with the Skills CLI:
+
+```bash
+npx skills add yamadashy/repomix --skill repomix-explorer
+```
+
+To target a specific assistant, pass `--agent`:
+
+```bash
+npx skills add yamadashy/repomix --skill repomix-explorer --agent codex
+npx skills add yamadashy/repomix --skill repomix-explorer --agent openclaw
+```
+
+For Hermes Agent, install the single-file skill with Hermes Agent's native skills command:
+
+```bash
+hermes skills install https://raw.githubusercontent.com/yamadashy/repomix/main/skills/repomix-explorer/SKILL.md
+```
 
 #### What It Does
 
@@ -1344,10 +1437,13 @@ Here's an explanation of the configuration options:
 | Option                           | Description                                                                                                                  | Default                |
 |----------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
 | `input.maxFileSize`              | Maximum file size in bytes to process. Files larger than this will be skipped                                                | `50000000`            |
+| `input.processors`               | Ordered array of `{ pattern, command, timeout?, onError? }` entries that run an external command to transform matching files before packing (e.g. JSON→TOON). First matching glob wins. Runs arbitrary commands, so it runs only for local CLI runs (and remote repos with `--remote-trust-config`). See [File Processors](#file-processors) | Not set |
 | `output.filePath`                | The name of the output file                                                                                                  | `"repomix-output.xml"` |
 | `output.style`                   | The style of the output (`xml`, `markdown`, `json`, `plain`)                                                                 | `"xml"`                |
+| `output.filePathStyle`           | How file paths are shown in output (`target-relative` keeps paths relative to each target root, `cwd-relative` keeps paths relative to the current working directory) | `"target-relative"`    |
 | `output.parsableStyle`           | Whether to escape the output based on the chosen style schema. Note that this can increase token count.                      | `false`                |
 | `output.compress`                | Whether to perform intelligent code extraction to reduce token count                                                         | `false`                |
+| `output.patterns`                | Per-file inclusion levels. An ordered array of `{ pattern, compress?, directoryStructureOnly? }` entries; the first matching glob wins and overrides the global `output.compress` for that file. See [Per-file Inclusion Levels](#per-file-inclusion-levels-outputpatterns) | Not set |
 | `output.headerText`              | Custom text to include in the file header                                                                                    | `null`                 |
 | `output.instructionFilePath`     | Path to a file containing detailed custom instructions                                                                       | `null`                 |
 | `output.fileSummary`             | Whether to include a summary section at the beginning of the output                                                          | `true`                 |
@@ -1361,6 +1457,7 @@ Here's an explanation of the configuration options:
 | `output.splitOutput`             | Split output into multiple numbered files by maximum size per part (e.g., `1000000` for ~1MB). Keeps each file under the limit and avoids splitting files across parts | Not set                |
 | `output.topFilesLength`          | Number of top files to display in the summary. If set to 0, no summary will be displayed                                     | `5`                    |
 | `output.tokenCountTree`          | Whether to display file tree with token count summaries. Can be boolean or number (minimum token count threshold)           | `false`                |
+| `output.tokenBudget`             | Fail with a non-zero exit code when the packed output exceeds this many tokens. Acts as a guard for CI/agent context limits; the output is still generated | Not set                |
 | `output.includeEmptyDirectories` | Whether to include empty directories in the repository structure                                                             | `false`                |
 | `output.includeFullDirectoryStructure` | When using `include` patterns, whether to display the complete directory tree (respecting ignore patterns) while still processing only the included files. Provides full repository context for AI analysis | `false`                |
 | `output.git.sortByChanges`       | Whether to sort files by git change count (files with more changes appear at the bottom)                                     | `true`                 |
@@ -1406,13 +1503,23 @@ Example configuration:
 {
   "$schema": "https://repomix.com/schemas/latest/schema.json",
   "input": {
-    "maxFileSize": 50000000
+    "maxFileSize": 50000000,
+    // Optional: transform matching files with an external command before packing (local CLI only)
+    // "processors": [
+    //   { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    // ]
   },
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
+    "filePathStyle": "target-relative",
     "parsableStyle": false,
     "compress": false,
+    // Optional: override the inclusion level per glob (first match wins)
+    // "patterns": [
+    //   { "pattern": "docs/**/*", "compress": true },
+    //   { "pattern": "website/**/*", "directoryStructureOnly": true }
+    // ],
     "headerText": "Custom header information for the packed file.",
     "fileSummary": true,
     "directoryStructure": true,
@@ -1421,10 +1528,11 @@ Example configuration:
     "removeEmptyLines": false,
     "topFilesLength": 5,
     "tokenCountTree": false, // or true, or a number like 10 for minimum token threshold
+    // "tokenBudget": 180000, // optional: fail when the packed output exceeds this many tokens
     "showLineNumbers": false,
     "truncateBase64": false,
     "copyToClipboard": false,
-    "splitOutput": null, // or a number like 1000000 for ~1MB per file
+    // "splitOutput": 1000000, // optional: split output into multiple ~1MB files
     "includeEmptyDirectories": false,
     "git": {
       "sortByChanges": true,
@@ -1570,6 +1678,42 @@ and YAML.
 Note: The comment removal process is conservative to avoid accidentally removing code. In complex cases, some comments
 might be retained.
 
+### File Processors
+
+`input.processors` runs an external command to transform a file's content **before** it is packed. Each entry targets files by glob (matched like `include`/`ignore`) and replaces the matching files' content with the command's standard output — useful for token-reducing or format-converting transforms such as JSON→[TOON](https://github.com/toon-format/toon), SVG minification, or notebook→script conversion.
+
+```json5
+{
+  "input": {
+    "processors": [
+      { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    ]
+  }
+}
+```
+
+The `{file}` placeholder (required) is replaced with a temp file holding the file's content, and the command's stdout becomes the new content. Patterns are evaluated in order and the **first match wins** (one processor per file). Each entry also accepts `timeout` (ms, default `60000`) and `onError` (`"fail"` to abort the pack, default; `"skip"` to warn and keep the original content).
+
+Example commands (each is a `command` value paired with a suitable `pattern`):
+
+| Pattern | `command` | What it does |
+| --- | --- | --- |
+| `**/*.json` | `jq -c . {file}` | Compact JSON by stripping whitespace |
+| `**/*.json` | `npx @toon-format/cli {file}` | Convert JSON to [TOON](https://github.com/toon-format/toon), a compact token-efficient format |
+| `**/*.svg` | `npx svgo -i {file} -o -` | Minify SVG |
+| `**/*.ipynb` | `jupyter nbconvert --to script --stdout {file}` | Convert a Jupyter notebook to a plain Python script |
+
+Apply only one processor per file (first match wins), and make sure the tool it invokes is on your `PATH` (`npx`-based commands download it on first use).
+
+> [!WARNING]
+> File processors run **arbitrary commands** from your config file, so execution is default-deny:
+>
+> - Enabled **only for local CLI runs**, where Repomix assumes the config in your working directory is your own — the same trust boundary as an npm script or a Makefile. As with those, if you run `repomix` inside a repository you obtained from someone else **without reviewing its `repomix.config.json` first**, its processor commands will execute on your machine. Review the config of untrusted repositories before packing them.
+> - **Disabled** for the library API (`pack()` / `runCli()`), the MCP server, and the hosted [repomix.com](https://repomix.com).
+> - For remote repositories (`--remote`), the cloned config — and its processors — is trusted only when you explicitly pass `--remote-trust-config`; without it the remote config is not even loaded.
+>
+> Active processors are printed at startup and in error messages, so reference credentials via environment variables (e.g. `$TOKEN`), which are logged unexpanded, rather than inlining them. On timeout Repomix kills the command's shell, but a command that spawns its own long-lived background processes may leave them running. See the [configuration guide](https://repomix.com/guide/configuration#file-processors) for details.
+
 ## 🔍 Security Check
 
 Repomix includes a security check feature that uses [Secretlint](https://github.com/secretlint/secretlint) to detect
@@ -1611,6 +1755,37 @@ repomix --no-security-check
 > [!NOTE]
 > Disabling security checks may expose sensitive information. Use this option with caution and only when necessary, such
 > as when working with test files or documentation that contains example credentials.
+
+### Remote Repository Config Trust
+
+A `repomix.config.*` is code, not just data: a `.ts` / `.js` config is executed when loaded, `input.processors` runs
+external commands, and path options can read files outside the repository. Loading one from an unfamiliar repository is
+comparable to running its `Makefile`.
+
+For that reason, **a cloned repository's config is never loaded by default**. Your global config and CLI options still
+apply.
+
+When you opt in with `--remote-trust-config` (or `REPOMIX_REMOTE_TRUST_CONFIG=true`) on an interactive terminal, Repomix
+shows the config that is about to run and asks before loading it:
+
+- **Yes, once** — trust this run only.
+- **Yes, and don't ask again for this repository** — the decision is *content-pinned*: it records a hash of the config
+  you approved, so you are asked again if that repository later ships a different one (the `direnv allow` model).
+- **No** (the default selection) — abort without loading the config.
+
+The displayed config is written by the repository's author, so control, ANSI, and bidirectional characters are escaped,
+the output is capped, every config line is prefixed, and symlinked configs pointing outside the clone are refused — what
+you review is what runs.
+
+The prompt is skipped with `--force`, in non-interactive shells such as CI (existing automation keeps working), and once
+you have chosen to always trust that repository.
+
+> [!IMPORTANT]
+> The content pin covers the entry config file only. A `.ts` / `.js` config can `import` other files and
+> `input.processors` can invoke external scripts; neither is hashed. Treat "don't ask again" as trust in the repository,
+> not only in the file you read.
+
+See the [security guide](https://repomix.com/guide/security#remote-repository-config-trust) for the full trust model.
 
 ## 🤖 Using Repomix with GitHub Actions
 
@@ -1668,7 +1843,7 @@ Upload the output file as an artifact:
     compress: true
 
 - name: Upload Repomix output
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@v7
   with:
     name: repomix-output
     path: repomix-output.txt
@@ -1691,7 +1866,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Pack repository with Repomix
         uses: yamadashy/repomix/.github/actions/repomix@main
@@ -1699,7 +1874,7 @@ jobs:
           output: repomix-output.xml
 
       - name: Upload Repomix output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: repomix-output.xml
           path: repomix-output.xml

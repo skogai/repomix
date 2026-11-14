@@ -1,3 +1,8 @@
+---
+title: "Temel Kullanım"
+description: "Repomix CLI ile dizinleri, uzak depoları, seçili dosyaları, git diff’lerini, commit günlüklerini, bölünmüş çıktıları, token sayılarını ve sıkıştırılmış kodu paketleyin."
+---
+
 # Temel Kullanım
 
 ## Hızlı Başlangıç
@@ -50,6 +55,9 @@ repomix --remote https://github.com/user/repo
 
 # Kısa biçim kullanarak
 repomix --remote user/repo
+
+# --remote olmadan kısayol kullanımı (otomatik algılanır)
+repomix user/repo
 
 # Belirli dal/etiket/commit
 repomix --remote user/repo --remote-branch main

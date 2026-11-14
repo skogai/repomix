@@ -1,3 +1,8 @@
+---
+title: "Usare Repomix con GitHub Actions"
+description: "Automatizza Repomix in GitHub Actions per impacchettare repository destinati ad analisi IA, workflow CI, artefatti, revisioni del codice e output compressi."
+---
+
 # Usare Repomix con GitHub Actions
 
 Puoi automatizzare l'impacchettamento della tua codebase per l'analisi IA integrando Repomix nei tuoi workflow GitHub Actions. Questo è utile per l'integrazione continua (CI), la revisione del codice o la preparazione per strumenti LLM.
@@ -61,7 +66,7 @@ Per rendere il file impacchettato disponibile per gli step successivi o per il d
     compress: true
 
 - name: Upload Repomix output
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@v7
   with:
     name: repomix-output
     path: repomix-output.xml
@@ -105,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Pack repository with Repomix
         uses: yamadashy/repomix/.github/actions/repomix@main
@@ -113,7 +118,7 @@ jobs:
           output: repomix-output.xml
 
       - name: Upload Repomix output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: repomix-output.xml
           path: repomix-output.xml

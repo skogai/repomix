@@ -1,6 +1,8 @@
 import gitUrlParse, { type GitUrl } from 'git-url-parse';
-import { RepomixError } from '../../shared/errorHandle.js';
+import { getErrorMessage, RepomixError } from '../../shared/errorHandle.js';
 import { logger } from '../../shared/logger.js';
+import { assertNotMetadataEndpoint } from './gitMetadataEndpoint.js';
+import { isExplicitRemoteUrl, isValidExplicitUrlOwnerRepo, isValidShorthand } from './gitRemoteUrl.js';
 
 interface IGitUrl extends GitUrl {
   commit: string | undefined;
@@ -12,12 +14,8 @@ export interface GitHubRepoInfo {
   ref?: string; // branch, tag, or commit SHA
 }
 
-// Check the short form of the GitHub URL. e.g. yamadashy/repomix
-const VALID_NAME_PATTERN = '[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?';
-const validShorthandRegex = new RegExp(`^${VALID_NAME_PATTERN}/${VALID_NAME_PATTERN}$`);
-export const isValidShorthand = (remoteValue: string): boolean => {
-  return validShorthandRegex.test(remoteValue);
-};
+// Re-export from lightweight module to preserve public API
+export { isValidShorthand } from './gitRemoteUrl.js';
 
 /**
  * Check if a URL is an Azure DevOps repository URL by validating the hostname.
@@ -51,10 +49,69 @@ const isAzureDevOpsUrl = (remoteValue: string): boolean => {
   }
 };
 
-export const parseRemoteValue = (
+export interface ParsedRemoteValue {
+  repoUrl: string;
+  remoteBranch: string | undefined;
+  // Path after the ref in a /tree/ or /blob/ URL (e.g. `clients/client-ses`).
+  // Repomix packs the whole repository, so callers only use this to warn.
+  // `kind` is unknown when the URL does not say (e.g. Bitbucket /src/).
+  subpath?: { path: string; kind: 'file' | 'directory' | 'unknown' };
+}
+
+export const parseRemoteValue = (remoteValue: string, refs: string[] = []): ParsedRemoteValue => {
+  // Check the input and the resolved URL: shorthand expansion and git-url-parse
+  // normalization can both change the host git will actually contact.
+  assertNotMetadataEndpoint(remoteValue);
+  const parsed = parseRemoteValueInternal(remoteValue, refs);
+  assertNotMetadataEndpoint(parsed.repoUrl);
+  return parsed;
+};
+
+const SUBPATH_KINDS: Record<string, 'file' | 'directory'> = { tree: 'directory', blob: 'file', raw: 'file' };
+
+// git-url-parse's `filepath` cannot be used as-is: it keeps the query and fragment
+// (`?private_token=...`, `#L10`), keeps percent-encoding, and locates the ref by its
+// first occurrence, so an owner or repository named like the ref shifts the path.
+// Instead, find `<filepathtype>/<ref>/` in the URL pathname and take what follows.
+const extractSubpath = (
   remoteValue: string,
-  refs: string[] = [],
-): { repoUrl: string; remoteBranch: string | undefined } => {
+  ref: string,
+  filepathtype: string | undefined,
+): Pick<ParsedRemoteValue, 'subpath'> => {
+  if (!filepathtype) {
+    return {};
+  }
+  let segments: string[];
+  try {
+    segments = new URL(remoteValue).pathname.split('/').filter(Boolean);
+  } catch {
+    return {};
+  }
+  const refSegments = ref.split('/');
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] !== filepathtype) {
+      continue;
+    }
+    const refEnd = i + 1 + refSegments.length;
+    if (segments.slice(i + 1, refEnd).join('/') !== ref) {
+      continue;
+    }
+    const rawPath = segments.slice(refEnd).join('/');
+    if (!rawPath) {
+      return {};
+    }
+    let path = rawPath;
+    try {
+      path = decodeURIComponent(rawPath);
+    } catch {
+      // Keep the raw path when it is not valid percent-encoding
+    }
+    return { subpath: { path, kind: SUBPATH_KINDS[filepathtype] ?? 'unknown' } };
+  }
+  return {};
+};
+
+const parseRemoteValueInternal = (remoteValue: string, refs: string[]): ParsedRemoteValue => {
   if (isValidShorthand(remoteValue)) {
     logger.trace(`Formatting GitHub shorthand: ${remoteValue}`);
     return {
@@ -83,7 +140,14 @@ export const parseRemoteValue = (
     const ownerSlashRepo =
       parsedFields.full_name.split('/').length > 1 ? parsedFields.full_name.split('/').slice(-2).join('/') : '';
 
-    if (ownerSlashRepo !== '' && !isValidShorthand(ownerSlashRepo)) {
+    // An explicit URL's owner/repo may lead/trail a name segment with `.`/`-`/`_`
+    // (e.g. the org-profile repo `owner/.github`), which the shorthand regex rejects —
+    // but git-url-parse preserves malformed paths (doubled slashes, extra segments)
+    // in full_name, so explicit URLs still need their own segment check.
+    const isOwnerSlashRepoValid = isExplicitRemoteUrl(remoteValue)
+      ? isValidExplicitUrlOwnerRepo(ownerSlashRepo)
+      : isValidShorthand(ownerSlashRepo);
+    if (ownerSlashRepo !== '' && !isOwnerSlashRepoValid) {
       throw new RepomixError('Invalid owner/repo in repo URL');
     }
 
@@ -93,6 +157,7 @@ export const parseRemoteValue = (
       return {
         repoUrl: repoUrl,
         remoteBranch: parsedFields.ref,
+        ...extractSubpath(remoteValue, parsedFields.ref, parsedFields.filepathtype),
       };
     }
 
@@ -160,7 +225,7 @@ export const parseGitHubRepoInfo = (remoteValue: string): GitHubRepoInfo | null 
       }
     } catch (urlError) {
       // Fall back to git-url-parse if URL parsing fails
-      logger.trace('URL parsing failed, falling back to git-url-parse:', (urlError as Error).message);
+      logger.trace('URL parsing failed, falling back to git-url-parse:', getErrorMessage(urlError));
     }
 
     // Parse using git-url-parse for other cases
@@ -191,7 +256,7 @@ export const parseGitHubRepoInfo = (remoteValue: string): GitHubRepoInfo | null 
 
     return result;
   } catch (error) {
-    logger.trace('Failed to parse GitHub repo info:', (error as Error).message);
+    logger.trace('Failed to parse GitHub repo info:', getErrorMessage(error));
     return null;
   }
 };

@@ -22,6 +22,7 @@ export const configPtBr = defineConfig({
             { text: 'Uso Básico', link: '/pt-br/guide/usage' },
             { text: 'Exemplos de Prompt', link: '/pt-br/guide/prompt-examples' },
             { text: 'Casos de Uso', link: '/pt-br/guide/use-cases' },
+            { text: 'FAQ e solução de problemas', link: '/pt-br/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configPtBr = defineConfig({
           items: [
             { text: 'Formatos de Saída', link: '/pt-br/guide/output' },
             { text: 'Opções de Linha de Comando', link: '/pt-br/guide/command-line-options' },
+            { text: 'Modo de observação', link: '/pt-br/guide/watch-mode' },
             { text: 'Configuração', link: '/pt-br/guide/configuration' },
             { text: 'Instruções Personalizadas', link: '/pt-br/guide/custom-instructions' },
             { text: 'Processamento de Repositório GitHub', link: '/pt-br/guide/remote-repository-processing' },

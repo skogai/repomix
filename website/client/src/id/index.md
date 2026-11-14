@@ -1,6 +1,7 @@
 ---
 layout: home
 title: Repomix
+description: Kemas repositori lokal atau remote ke XML, Markdown, JSON, atau teks biasa yang ramah AI untuk Claude, ChatGPT, Gemini, MCP, dan alur kerja code review.
 titleTemplate: Kemas basis kode Anda ke dalam format yang ramah AI
 aside: false
 editLink: false
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: Fokus pada Keamanan
-    details: Mengintegrasikan Secretlint untuk pemeriksaan keamanan yang kuat untuk mendeteksi dan mencegah penyertaan informasi sensitif.
+    details: Mengintegrasikan Secretlint untuk mendeteksi file yang cocok dengan format kredensial yang dikenal dan mengecualikannya dari output.
 
   - icon: 📊
     title: Penghitungan Token

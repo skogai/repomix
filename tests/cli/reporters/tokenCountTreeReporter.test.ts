@@ -1,27 +1,16 @@
-import { beforeEach, describe, expect, type Mock, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { reportTokenCountTree } from '../../../src/cli/reporters/tokenCountTreeReporter.js';
 import type { RepomixConfigMerged } from '../../../src/config/configSchema.js';
 import type { ProcessedFile } from '../../../src/core/file/fileTypes.js';
-import { logger } from '../../../src/shared/logger.js';
-
-vi.mock('../../../src/shared/logger');
-vi.mock('picocolors', () => ({
-  default: {
-    white: (str: string) => `WHITE:${str}`,
-    dim: (str: string) => `DIM:${str}`,
-    green: (str: string) => `GREEN:${str}`,
-    yellow: (str: string) => `YELLOW:${str}`,
-    red: (str: string) => `RED:${str}`,
-    cyan: (str: string) => `CYAN:${str}`,
-    underline: (str: string) => `UNDERLINE:${str}`,
-  },
-}));
+import { tagColors } from '../../testing/cliDoubles.js';
+import { silenceLogger } from '../../testing/loggerDoubles.js';
 
 describe('reportTokenCountTree', () => {
-  const mockLogger = logger.log as Mock;
+  let mockLogger: ReturnType<typeof silenceLogger>['log'];
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockLogger = silenceLogger().log;
+    tagColors();
   });
 
   test('should use existing token counts and display tree', () => {
@@ -50,6 +39,29 @@ describe('reportTokenCountTree', () => {
     expect(calls.some((call) => call.includes('src/'))).toBe(true);
     expect(calls.some((call) => call.includes('file1.js'))).toBe(true);
     expect(calls.some((call) => call.includes('file2.js'))).toBe(true);
+  });
+
+  test('should display directories whose name starts with an underscore', () => {
+    const processedFiles: ProcessedFile[] = [
+      { path: 'src/__tests__/foo.test.js', content: 'test("example", () => {});' },
+      { path: 'src/index.js', content: 'const a = 1;' },
+    ];
+
+    const fileTokenCounts = {
+      'src/__tests__/foo.test.js': 100,
+      'src/index.js': 50,
+    };
+
+    const config = {
+      output: { tokenCountTree: true },
+    } as RepomixConfigMerged;
+
+    reportTokenCountTree(processedFiles, fileTokenCounts, config);
+
+    const calls = mockLogger.mock.calls.map((call: unknown[]) => call[0] as string);
+    // The __tests__ directory must appear, and src must sum both children (150).
+    expect(calls.some((call) => call.includes('__tests__/'))).toBe(true);
+    expect(calls.some((call) => call.includes('src/') && call.includes('150'))).toBe(true);
   });
 
   test('should handle empty file list', () => {

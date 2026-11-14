@@ -1,6 +1,7 @@
 ---
 layout: home
 title: Repomix
+description: 將本機或遠端儲存庫打包為適用於 Claude、ChatGPT、Gemini、MCP 與程式碼審查流程的 AI 友善 XML、Markdown、JSON 或純文字。
 titleTemplate: 將程式碼庫打包成AI友好的格式
 aside: false
 editLink: false
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: 注重安全
-    details: 集成 Secretlint 進行強大的安全檢查，檢測並防止敏感信息的洩露。
+    details: 整合 Secretlint，偵測符合已知憑證格式的文件並將其從輸出中排除。
 
   - icon: 📊
     title: 令牌計數

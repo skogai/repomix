@@ -1,3 +1,8 @@
+---
+title: Command Line Options
+description: Reference every Repomix CLI option for input, output, file selection, remote repositories, configuration, security, token counting, MCP, and agent skills.
+---
+
 # Command Line Options
 
 ## Basic Options
@@ -21,6 +26,7 @@
 |--------|-------------|
 | `-o, --output <file>` | Output file path (default: `repomix-output.xml`, use `"-"` for stdout) |
 | `--style <style>` | Output format: `xml`, `markdown`, `json`, or `plain` (default: `xml`) |
+| `--output-file-path-style <style>` | How file paths are shown in output: `target-relative` or `cwd-relative` (default: `target-relative`) |
 | `--parsable-style` | Escape special characters to ensure valid XML/Markdown (needed when output contains code that breaks formatting) |
 | `--compress` | Extract essential code structure (classes, functions, interfaces) using Tree-sitter parsing |
 | `--output-show-line-numbers` | Prefix each line with its line number in the output |
@@ -56,7 +62,7 @@
 |--------|-------------|
 | `--remote <url>` | Clone and pack a remote repository (GitHub URL or `user/repo` format) |
 | `--remote-branch <name>` | Specific branch, tag, or commit to use (default: repository's default branch) |
-| `--remote-trust-config` | Trust and load config files from remote repositories (disabled by default for security) |
+| `--remote-trust-config` | Trust and load config files from remote repositories. A trusted config can run commands and read local files, so use it only for repositories you fully trust (disabled by default for security). On an interactive terminal, the config is shown and you are asked to confirm |
 
 ## Configuration Options
 
@@ -71,17 +77,26 @@
 
 ## Token Count Options
 - `--token-count-encoding <encoding>`: Tokenizer model for counting: o200k_base (GPT-4o), cl100k_base (GPT-3.5/4), etc. (default: o200k_base)
+- `--token-budget <number>`: Fail with a non-zero exit code when the packed output exceeds N tokens. Useful as a guard in CI pipelines and agent workflows to keep output within a target model's context window. The output is still generated; only the exit code signals the overflow.
 
 ## MCP Options
 - `--mcp`: Run as Model Context Protocol server for AI tool integration
+- `--sandbox [dir]`: (with `--mcp`) Confine the MCP server's file tools to a workspace directory (defaults to the working directory; e.g. `--sandbox path/to/project`). Every path is relative to that root, absolute/host paths are refused, and remote packing, skill generation, and attaching external outputs are disabled. See [MCP Server](/guide/mcp-server).
 
 ## Agent Skills Generation Options
 
 | Option | Description |
 |--------|-------------|
 | `--skill-generate [name]` | Generate Claude Agent Skills format output to `.claude/skills/<name>/` directory (name auto-generated if omitted) |
+| `--skill-project-name <name>` | Override the project name used in generated Skills descriptions |
 | `--skill-output <path>` | Specify skill output directory path directly (skips location prompt) |
-| `-f, --force` | Skip all confirmation prompts (e.g., skill directory overwrite) |
+| `-f, --force` | Skip all confirmation prompts (skill directory overwrite, remote config trust) |
+
+## Watch Mode Options
+
+- `-w, --watch`: Watch for file changes and automatically re-pack. New, changed, and deleted files are detected, rapid changes are debounced (300 ms), and a timestamp is printed after each rebuild. Press `Ctrl+C` to stop.
+
+Watch mode only works with local directories, so it cannot be combined with `--remote`, a positional remote repository URL, `--stdout`, `--stdin`, `--split-output`, `--skill-generate`, or `--copy`. These restrictions apply whether the option is set on the command line or in your config file.
 
 ## Related Resources
 
@@ -124,6 +139,9 @@ repomix --remote https://github.com/user/repo/commit/836abcd7335137228ad77feb286
 # Remote repository with shorthand
 repomix --remote user/repo
 
+# Remote repository with shorthand (auto-detected, no --remote needed)
+repomix user/repo
+
 # Using stdin for file list
 find src -name "*.ts" -type f | repomix --stdin
 git ls-files "*.js" | repomix --stdin
@@ -138,4 +156,8 @@ repomix --include-diffs --include-logs  # Include both diffs and logs
 # Token count analysis
 repomix --token-count-tree
 repomix --token-count-tree 1000  # Only show files/directories with 1000+ tokens
+
+# Watch mode — automatically re-pack on file changes
+repomix --watch
+repomix -w --include "src/**/*.ts"
 ```

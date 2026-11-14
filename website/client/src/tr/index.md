@@ -1,6 +1,7 @@
 ---
 layout: home
 title: Repomix
+description: "Yerel veya uzak depoları Claude, ChatGPT, Gemini, MCP ve kod inceleme iş akışları için yapay zeka dostu XML, Markdown, JSON ya da düz metin formatlarına paketleyin."
 titleTemplate: Kod tabanınızı yapay zeka dostu formatlara dönüştürün
 aside: false
 editLink: false
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: Güvenlik Odaklı
-    details: Hassas bilgilerin dahil edilmesini tespit edip önlemek için Secretlint ile güçlü güvenlik kontrolleri uygular.
+    details: Bilinen kimlik bilgisi biçimleriyle eşleşen dosyaları tespit etmek ve çıktıdan hariç tutmak için Secretlint kullanır.
 
   - icon: 📊
     title: Token Sayımı

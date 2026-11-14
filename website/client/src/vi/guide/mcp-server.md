@@ -1,3 +1,8 @@
+---
+title: Máy chủ MCP
+description: Chạy Repomix như server Model Context Protocol để AI assistant có thể trực tiếp đóng gói, tìm kiếm và đọc codebase local hoặc remote.
+---
+
 # Máy chủ MCP
 
 Repomix hỗ trợ [Model Context Protocol (MCP)](https://modelcontextprotocol.io), cho phép các trợ lý AI tương tác trực tiếp với codebase của bạn. Khi chạy như một máy chủ MCP, Repomix cung cấp các công cụ cho phép các trợ lý AI đóng gói repository cục bộ hoặc từ xa để phân tích mà không cần chuẩn bị file thủ công.
@@ -14,6 +19,30 @@ repomix --mcp
 ```
 
 Điều này khởi động Repomix ở chế độ máy chủ MCP, làm cho nó có sẵn cho các trợ lý AI hỗ trợ Model Context Protocol.
+
+## Chế độ Sandbox
+
+Theo mặc định, máy chủ MCP có thể đọc bất kỳ đường dẫn nào mà người dùng host có thể truy cập. Điều này thuận tiện cho một trợ lý cục bộ đáng tin cậy, nhưng lại quá rộng khi máy chủ được expose cho một client hoặc agent không đáng tin cậy. Flag `--sandbox` giới hạn các công cụ tệp của máy chủ trong một thư mục workspace duy nhất:
+
+```bash
+# Giới hạn trong thư mục làm việc hiện tại
+repomix --mcp --sandbox
+
+# Giới hạn trong một thư mục cụ thể
+repomix --mcp --sandbox path/to/project
+```
+
+Khi chế độ sandbox được bật:
+
+- **Mọi đường dẫn đều tương đối với gốc workspace.** Đường dẫn tuyệt đối, `~`, `..`, và đường dẫn ổ đĩa/UNC của Windows đều bị từ chối, và các đường dẫn phân giải ra bên ngoài gốc (kể cả thông qua symlink) đều bị loại bỏ. Kết quả và thông báo lỗi cũng tương đối, vì vậy đường dẫn trên máy host không bị lộ ra. Điều này áp dụng cho các tham số `directory` và `path` trong phần công cụ tham chiếu bên dưới: ở chế độ sandbox, hãy truyền chúng dưới dạng tương đối với gốc workspace, thay vì đường dẫn tuyệt đối như các bảng đó thường mô tả.
+- **Chỉ các công cụ chỉ-đọc, bị giới hạn trong thư mục gốc mới được đăng ký:** `pack_codebase`, `read_repomix_output`, `grep_repomix_output`, `file_system_read_file`, và `file_system_read_directory`. Đóng gói từ xa, tạo skill, và đính kèm đầu ra bên ngoài đều bị vô hiệu hóa, vì chúng cần truy cập mạng, ghi tệp, hoặc tham chiếu đến các đường dẫn tùy ý. Bản thân hai công cụ `file_system_*` cũng chỉ khả dụng ở chế độ sandbox, nơi gốc workspace giới hạn phạm vi mà chúng có thể truy cập.
+- **Tệp cấu hình không được tải.** `pack_codebase` bỏ qua cả `repomix.config.*` của thư mục được đóng gói lẫn cấu hình toàn cục của bạn.
+
+Khi không có `--sandbox`, `pack_codebase` tải `repomix.config.*` trong thư mục mà nó đóng gói và tin cậy tệp đó, giống như chạy `repomix` tại đó từ dòng lệnh. Tệp cấu hình là mã: nó có thể chạy khi được tải và đọc các tệp bên ngoài kho lưu trữ (xem [Bảo mật](/vi/guide/security#vi-sao-tep-cau-hinh-la-ma-code)). Nếu trợ lý của bạn có thể đóng gói các thư mục mà bạn không tin cậy, chẳng hạn kho lưu trữ bên thứ ba đã clone, hãy dùng `--sandbox`.
+
+Đây là một biện pháp giới hạn ở cấp độ ứng dụng đối với bề mặt công cụ (phòng thủ theo chiều sâu), không phải một sandbox ở cấp độ hệ điều hành. Khi host máy chủ cho các client không đáng tin cậy, bạn vẫn nên chạy nó dưới cơ chế cách ly thông thường của nền tảng (container, người dùng riêng biệt).
+
+`--sandbox` chỉ ảnh hưởng đến máy chủ MCP; nó không có tác dụng gì nếu không có `--mcp`.
 
 ## Cấu hình Máy chủ MCP
 
@@ -113,6 +142,7 @@ Công cụ này đóng gói một thư mục code cục bộ thành một file X
 | `compress` | Không | `false` | Kích hoạt nén Tree-sitter để trích xuất các chữ ký code cần thiết và cấu trúc trong khi loại bỏ chi tiết triển khai. Giảm sử dụng token khoảng 70% trong khi bảo toàn ý nghĩa ngữ nghĩa. Thường không cần thiết vì `grep_repomix_output` cho phép truy xuất nội dung tăng dần. |
 | `includePatterns` | Không | — | File để bao gồm sử dụng pattern fast-glob. Tách bằng dấu phẩy (ví dụ: `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Không | — | File bổ sung để loại trừ sử dụng pattern fast-glob. Tách bằng dấu phẩy (ví dụ: `"test/**,*.spec.js"`). Bổ sung cho `.gitignore` và loại trừ tích hợp. |
+| `outputPatterns` | Không | — | Các cấp độ bao gồm theo từng file, phản ánh tùy chọn [`output.patterns`](./configuration.md) trong file cấu hình. Một mảng các mục `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`. Pattern khớp đầu tiên sẽ được áp dụng; `directoryStructureOnly` được ưu tiên hơn `compress`, và một kết quả khớp không có cờ nào trong hai cờ này sẽ buộc hiển thị nội dung đầy đủ (hữu ích để loại trừ file khỏi `compress` toàn cục). Ghi đè mọi `output.patterns` từ `repomix.config.json` của repository đích. |
 | `topFilesLength` | Không | `10` | Số lượng file lớn nhất theo kích thước để hiển thị trong tóm tắt metrics |
 | `style` | Không | `xml` | Kiểu định dạng đầu ra: `xml`, `markdown`, `json`, hoặc `plain` |
 
@@ -120,12 +150,18 @@ Công cụ này đóng gói một thư mục code cục bộ thành một file X
 ```json
 {
   "directory": "/path/to/your/project",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
+
+Với ví dụ trên (`compress: true` đóng vai trò là phương án bao quát cho các file không khớp), các file trong `src/core/` được giữ nguyên nội dung đầy đủ, các file trong `docs/` chỉ được liệt kê trong cấu trúc thư mục, và mọi thứ còn lại đều được nén.
 
 ### pack_remote_repository
 
@@ -139,6 +175,7 @@ Công cụ này lấy, clone và đóng gói một repository GitHub thành mộ
 | `compress` | Không | `false` | Kích hoạt nén Tree-sitter để trích xuất các chữ ký code cần thiết và cấu trúc trong khi loại bỏ chi tiết triển khai. Giảm sử dụng token khoảng 70% trong khi bảo toàn ý nghĩa ngữ nghĩa. Thường không cần thiết vì `grep_repomix_output` cho phép truy xuất nội dung tăng dần. |
 | `includePatterns` | Không | — | File để bao gồm sử dụng pattern fast-glob. Tách bằng dấu phẩy (ví dụ: `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Không | — | File bổ sung để loại trừ sử dụng pattern fast-glob. Tách bằng dấu phẩy (ví dụ: `"test/**,*.spec.js"`). Bổ sung cho `.gitignore` và loại trừ tích hợp. |
+| `outputPatterns` | Không | — | Các cấp độ bao gồm theo từng file, phản ánh tùy chọn [`output.patterns`](./configuration.md) trong file cấu hình. Một mảng các mục `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`. Pattern khớp đầu tiên sẽ được áp dụng; `directoryStructureOnly` được ưu tiên hơn `compress`, và một kết quả khớp không có cờ nào trong hai cờ này sẽ buộc hiển thị nội dung đầy đủ (hữu ích để loại trừ file khỏi `compress` toàn cục). |
 | `topFilesLength` | Không | `10` | Số lượng file lớn nhất theo kích thước để hiển thị trong tóm tắt metrics |
 | `style` | Không | `xml` | Kiểu định dạng đầu ra: `xml`, `markdown`, `json`, hoặc `plain` |
 
@@ -146,9 +183,13 @@ Công cụ này lấy, clone và đóng gói một repository GitHub thành mộ
 ```json
 {
   "remote": "yamadashy/repomix",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
@@ -168,7 +209,7 @@ Công cụ này đọc nội dung của một file đầu ra được tạo bở
 **Tính năng:**
 - Được thiết kế đặc biệt cho các môi trường dựa trên web hoặc ứng dụng sandbox
 - Truy xuất nội dung của các đầu ra được tạo trước đó bằng ID của chúng
-- Cung cấp truy cập an toàn đến codebase được đóng gói mà không cần truy cập hệ thống file
+- Cung cấp quyền truy cập đến codebase được đóng gói mà không cần truy cập hệ thống file
 - Hỗ trợ đọc một phần cho các file lớn
 
 **Ví dụ:**
@@ -213,48 +254,35 @@ Công cụ này tìm kiếm các pattern trong một file đầu ra Repomix sử
 
 ### file_system_read_file và file_system_read_directory
 
-Máy chủ MCP của Repomix cung cấp hai công cụ hệ thống file cho phép các trợ lý AI tương tác an toàn với hệ thống file cục bộ:
+Hai công cụ hệ thống file này chỉ khả dụng ở [chế độ sandbox](#chế-độ-sandbox) (`--sandbox`), nơi gốc workspace giới hạn phạm vi mà chúng có thể truy cập. Nếu không có `--sandbox`, chúng sẽ không được đăng ký.
 
 1. `file_system_read_file`
-  - Đọc nội dung file từ hệ thống file cục bộ sử dụng đường dẫn tuyệt đối
-  - Bao gồm xác thực bảo mật tích hợp để phát hiện và ngăn chặn truy cập đến các file chứa thông tin nhạy cảm
-  - Triển khai xác thực bảo mật sử dụng [Secretlint](https://github.com/secretlint/secretlint)
-  - Ngăn chặn truy cập đến các file chứa thông tin nhạy cảm (khóa API, mật khẩu, bí mật)
-  - Xác thực đường dẫn tuyệt đối để ngăn chặn các cuộc tấn công directory traversal
-  - Trả về thông báo lỗi rõ ràng cho các đường dẫn không hợp lệ và vấn đề bảo mật
+  - Đọc nội dung file tại một đường dẫn tương đối với gốc workspace (ví dụ `src/index.ts`)
+  - Từ chối nội dung khớp với các định dạng bí mật đã biết ([Secretlint](https://github.com/secretlint/secretlint)) như một biện pháp bảo vệ heuristic bổ sung; ranh giới truy cập là gốc workspace, không phải việc quét
+  - Trả về thông báo lỗi rõ ràng cho các đường dẫn không hợp lệ, mà không làm lộ đường dẫn trên máy host
 
 2. `file_system_read_directory`
-  - Liệt kê nội dung của một thư mục sử dụng đường dẫn tuyệt đối
-  - Trả về một danh sách được định dạng hiển thị các file và thư mục con với các chỉ báo rõ ràng
+  - Liệt kê nội dung của một thư mục tại một đường dẫn tương đối với gốc workspace (ví dụ `.` hoặc `src`)
   - Hiển thị file và thư mục với các chỉ báo rõ ràng (`[FILE]` hoặc `[DIR]`)
-  - Cung cấp điều hướng thư mục an toàn với xử lý lỗi thích hợp
-  - Xác thực đường dẫn và đảm bảo chúng là tuyệt đối
   - Hữu ích cho việc khám phá cấu trúc dự án và hiểu tổ chức codebase
-
-Cả hai công cụ đều kết hợp các biện pháp bảo mật mạnh mẽ:
-- Xác thực đường dẫn tuyệt đối để ngăn chặn các cuộc tấn công directory traversal
-- Kiểm tra quyền để đảm bảo quyền truy cập thích hợp
-- Tích hợp với Secretlint để phát hiện thông tin nhạy cảm
-- Thông báo lỗi rõ ràng để debug tốt hơn và nhận thức bảo mật
 
 **Ví dụ:**
 ```typescript
 // Đọc một file
 const fileContent = await tools.file_system_read_file({
-  path: '/absolute/path/to/file.txt'
+  path: 'src/index.ts'
 });
 
 // Liệt kê nội dung thư mục
 const dirContent = await tools.file_system_read_directory({
-  path: '/absolute/path/to/directory'
+  path: 'src'
 });
 ```
 
 Các công cụ này đặc biệt hữu ích khi các trợ lý AI cần:
-- Phân tích các file cụ thể trong codebase
+- Phân tích các file cụ thể trong workspace
 - Điều hướng cấu trúc thư mục
 - Xác minh sự tồn tại và khả năng truy cập của file
-- Đảm bảo các hoạt động hệ thống file an toàn
 
 ## Lợi ích của việc sử dụng Repomix như một Máy chủ MCP
 

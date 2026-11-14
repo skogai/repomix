@@ -1,3 +1,8 @@
+---
+title: Opsi Baris Perintah
+description: Referensi lengkap opsi CLI Repomix untuk input, output, pemilihan file, repositori remote, konfigurasi, keamanan, penghitungan token, MCP, dan agent skills.
+---
+
 # Opsi Baris Perintah
 
 ## Opsi Dasar
@@ -21,6 +26,7 @@
 |------|-----------|
 | `-o, --output <file>` | Jalur file output (default: `repomix-output.xml`, gunakan `"-"` untuk stdout) |
 | `--style <style>` | Format output: `xml`, `markdown`, `json`, atau `plain` (default: `xml`) |
+| `--output-file-path-style <style>` | Cara jalur file ditampilkan dalam output: `target-relative` atau `cwd-relative` (default: `target-relative`) |
 | `--parsable-style` | Escape karakter khusus untuk memastikan XML/Markdown yang valid (diperlukan saat output berisi kode yang merusak format) |
 | `--compress` | Mengekstrak struktur kode esensial (kelas, fungsi, interface) menggunakan parsing Tree-sitter |
 | `--output-show-line-numbers` | Menambahkan nomor baris di depan setiap baris dalam output |
@@ -56,7 +62,7 @@
 |------|-----------|
 | `--remote <url>` | Mengkloning dan mengemas repositori remote (URL GitHub atau format `user/repo`) |
 | `--remote-branch <name>` | Branch, tag, atau commit spesifik yang akan digunakan (default: branch default repositori) |
-| `--remote-trust-config` | Memercayai dan memuat file konfigurasi dari repositori remote (dinonaktifkan secara default untuk keamanan) |
+| `--remote-trust-config` | Memercayai dan memuat file konfigurasi dari repositori remote. Konfigurasi yang dipercaya dapat menjalankan perintah dan membaca file lokal, jadi gunakan opsi ini hanya untuk repositori yang sepenuhnya Anda percayai (dinonaktifkan secara default untuk keamanan). Pada terminal interaktif, konfigurasi ditampilkan dan konfirmasi diminta |
 
 ## Opsi Konfigurasi
 
@@ -71,17 +77,26 @@
 
 ## Opsi Jumlah Token
 - `--token-count-encoding <encoding>`: Model tokenizer untuk penghitungan: o200k_base (GPT-4o), cl100k_base (GPT-3.5/4), dll. (default: o200k_base)
+- `--token-budget <number>`: Gagal dengan kode keluar bukan nol saat output yang dikemas melebihi N token. Berguna sebagai pengaman dalam pipeline CI dan alur kerja agen untuk menjaga output tetap dalam jendela konteks model target. Output tetap dihasilkan; hanya kode keluar yang menandakan overflow
 
 ## Opsi MCP
 - `--mcp`: Jalankan sebagai server Model Context Protocol untuk integrasi alat AI
+- `--sandbox [dir]`: (dengan `--mcp`) Membatasi tools file server MCP ke sebuah direktori workspace (default direktori kerja; mis. `--sandbox path/to/project`). Setiap path bersifat relatif terhadap root tersebut, path absolut/host ditolak, dan pengemasan remote, pembuatan skill, serta pelampiran output eksternal dinonaktifkan. Lihat [Server MCP](/id/guide/mcp-server)
 
 ## Opsi Pembuatan Agent Skills
 
 | Opsi | Deskripsi |
 |------|-----------|
 | `--skill-generate [name]` | Menghasilkan output format Claude Agent Skills ke direktori `.claude/skills/<name>/` (nama otomatis dihasilkan jika dihilangkan) |
+| `--skill-project-name <name>` | Mengganti nama proyek yang digunakan dalam deskripsi Skills yang dihasilkan |
 | `--skill-output <path>` | Menentukan jalur direktori output skill secara langsung (melewati prompt lokasi) |
-| `-f, --force` | Melewati semua prompt konfirmasi (mis. penimpaan direktori skill) |
+| `-f, --force` | Melewati semua prompt konfirmasi (penimpaan direktori skill, kepercayaan konfigurasi remote) |
+
+## Opsi Mode Watch
+
+- `-w, --watch`: Memantau perubahan file dan secara otomatis mengemas ulang. File baru, yang diubah, dan yang dihapus akan terdeteksi, perubahan cepat di-debounce (300 ms), dan stempel waktu dicetak setelah setiap pembangunan ulang. Tekan `Ctrl+C` untuk berhenti.
+
+Mode watch hanya bekerja dengan direktori lokal, sehingga tidak dapat dikombinasikan dengan `--remote`, URL repositori remote yang diberikan sebagai argumen posisional, `--stdout`, `--stdin`, `--split-output`, `--skill-generate`, atau `--copy`. Pembatasan ini berlaku baik opsi diatur di baris perintah maupun di file konfigurasi Anda.
 
 ## Sumber Daya Terkait
 
@@ -120,6 +135,9 @@ repomix --remote https://github.com/user/repo/commit/836abcd7335137228ad77feb286
 # Repositori remote dengan bentuk singkat
 repomix --remote user/repo
 
+# Repositori remote dengan bentuk singkat (terdeteksi otomatis, tanpa --remote)
+repomix user/repo
+
 # Daftar file menggunakan stdin
 find src -name "*.ts" -type f | repomix --stdin
 git ls-files "*.js" | repomix --stdin
@@ -134,5 +152,8 @@ repomix --include-diffs --include-logs  # Sertakan diff dan log
 # Analisis jumlah token
 repomix --token-count-tree
 repomix --token-count-tree 1000  # Hanya tampilkan file/direktori dengan 1000+ token
-```
 
+# Mode watch: kemas ulang otomatis saat file berubah
+repomix --watch
+repomix -w --include "src/**/*.ts"
+```

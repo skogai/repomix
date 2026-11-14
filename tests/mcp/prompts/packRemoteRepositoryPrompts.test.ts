@@ -1,11 +1,9 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { registerPackRemoteRepositoryPrompt } from '../../../src/mcp/prompts/packRemoteRepositoryPrompts.js';
+import { createMcpServerDouble, type McpServerDouble } from '../../testing/mcpServerDoubles.js';
 
 describe('packRemoteRepositoryPrompts', () => {
-  const mockMcpServer = {
-    prompt: vi.fn(),
-  };
+  let mockMcpServer: McpServerDouble;
 
   type PromptHandlerType = (args: {
     repository: string;
@@ -16,21 +14,24 @@ describe('packRemoteRepositoryPrompts', () => {
   let promptHandler: PromptHandlerType;
 
   beforeEach(() => {
-    vi.resetAllMocks();
+    mockMcpServer = createMcpServerDouble();
+    registerPackRemoteRepositoryPrompt(mockMcpServer.server);
 
-    registerPackRemoteRepositoryPrompt(mockMcpServer as unknown as McpServer);
-
-    promptHandler = mockMcpServer.prompt.mock.calls[0][3];
+    promptHandler = mockMcpServer.promptHandler<PromptHandlerType>();
   });
 
   it('should register the prompt with correct parameters', () => {
-    expect(mockMcpServer.prompt).toHaveBeenCalledWith(
+    expect(mockMcpServer.registerPrompt).toHaveBeenCalledWith(
       'pack_remote_repository',
-      expect.any(String),
       expect.objectContaining({
-        repository: expect.any(Object),
-        includePatterns: expect.any(Object),
-        ignorePatterns: expect.any(Object),
+        description: expect.any(String),
+        argsSchema: expect.objectContaining({
+          shape: expect.objectContaining({
+            repository: expect.any(Object),
+            includePatterns: expect.any(Object),
+            ignorePatterns: expect.any(Object),
+          }),
+        }),
       }),
       expect.any(Function),
     );

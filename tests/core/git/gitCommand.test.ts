@@ -1,4 +1,9 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { execFile, execFileSync } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   execGitDiff,
   execGitLog,
@@ -7,19 +12,26 @@ import {
   execGitShallowClone,
   execGitVersion,
   execLsRemote,
+  execLsRemoteHead,
 } from '../../../src/core/git/gitCommand.js';
 import { logger } from '../../../src/shared/logger.js';
-
-vi.mock('../../../src/shared/logger');
+import { silenceLogger } from '../../testing/loggerDoubles.js';
+import { createTempDir } from '../../testing/tempDir.js';
 
 const expectGitRemoteOpts = expect.objectContaining({
   timeout: 30000,
   env: expect.objectContaining({ GIT_TERMINAL_PROMPT: '0' }),
 });
 
+// The automatic existence probe uses a short timeout and suppresses credential prompts.
+const expectGitProbeOpts = expect.objectContaining({
+  timeout: 5000,
+  env: expect.objectContaining({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' }),
+});
+
 describe('gitCommand', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    silenceLogger();
   });
 
   describe('execGitLogFilenames', () => {
@@ -36,10 +48,21 @@ file2.ts
       const result = await execGitLogFilenames('/test/dir', 5, { execFileAsync: mockFileExecAsync });
 
       expect(result).toEqual(['file1.ts', 'file2.ts', 'file1.ts', 'file3.ts', 'file2.ts']);
+      // core.fsmonitor=, --no-show-signature and the diff-driver flags neutralize
+      // executable keys the target directory's own .git/config could set (see
+      // gitCommand.ts). core.quotePath=false keeps UTF-8 filenames readable and
+      // matchable against the paths used everywhere else in the output.
       expect(mockFileExecAsync).toHaveBeenCalledWith('git', [
         '-C',
         '/test/dir',
+        '-c',
+        'core.fsmonitor=',
+        '-c',
+        'core.quotePath=false',
         'log',
+        '--no-show-signature',
+        '--no-ext-diff',
+        '--no-textconv',
         '--pretty=format:',
         '--name-only',
         '-n',
@@ -65,7 +88,21 @@ file2.ts
       const result = await execGitDiff('/test/dir', [], { execFileAsync: mockFileExecAsync });
 
       expect(result).toBe(mockDiff);
-      expect(mockFileExecAsync).toHaveBeenCalledWith('git', ['-C', '/test/dir', 'diff', '--no-color']);
+      // core.fsmonitor=, --no-ext-diff and --no-textconv neutralize executable
+      // keys the target directory's own .git/config could set (see gitCommand.ts).
+      // The hardening flags come after the caller's options so they always win.
+      expect(mockFileExecAsync).toHaveBeenCalledWith('git', [
+        '-C',
+        '/test/dir',
+        '-c',
+        'core.fsmonitor=',
+        '-c',
+        'core.quotePath=false',
+        'diff',
+        '--no-color',
+        '--no-ext-diff',
+        '--no-textconv',
+      ]);
     });
 
     test('should throw error when git diff fails', async () => {
@@ -105,7 +142,16 @@ file2.ts
       const result = await execGitRevParse('/test/dir', { execFileAsync: mockFileExecAsync });
 
       expect(result).toBe(mockOutput);
-      expect(mockFileExecAsync).toHaveBeenCalledWith('git', ['-C', '/test/dir', 'rev-parse', '--is-inside-work-tree']);
+      // The repository probe also runs in the target directory, so it carries the
+      // core.fsmonitor= override (see gitCommand.ts).
+      expect(mockFileExecAsync).toHaveBeenCalledWith('git', [
+        '-C',
+        '/test/dir',
+        '-c',
+        'core.fsmonitor=',
+        'rev-parse',
+        '--is-inside-work-tree',
+      ]);
     });
 
     test('should throw error when git rev-parse fails', async () => {
@@ -119,6 +165,24 @@ file2.ts
   });
 
   describe('execGitShallowClone', () => {
+    // The .git removal is load-bearing for safety, not just tidiness: packing runs
+    // `git log` inside the clone by default and git honors that repository's own
+    // .git/config, so a retained .git would be a host command-execution vector.
+    // Unlike the sibling tests this one touches a real directory, because the
+    // guarantee is about what is left on disk rather than which git args ran.
+    test('removes the clone .git so a cloned repository cannot supply git config', async () => {
+      const mockFileExecAsync = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+      const directory = await createTempDir('repomix-clone-git-');
+      await fs.mkdir(path.join(directory, '.git'), { recursive: true });
+      await fs.writeFile(path.join(directory, '.git', 'config'), '[log]\n\tshowSignature = true\n');
+
+      await execGitShallowClone('https://github.com/user/repo.git', directory, undefined, {
+        execFileAsync: mockFileExecAsync,
+      });
+
+      await expect(fs.access(path.join(directory, '.git'))).rejects.toThrow();
+    });
+
     test('should execute without branch option if not specified by user', async () => {
       const mockFileExecAsync = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
       const url = 'https://github.com/user/repo.git';
@@ -131,6 +195,27 @@ file2.ts
         'git',
         ['clone', '--depth', '1', '--', url, directory],
         expectGitRemoteOpts,
+      );
+    });
+
+    test('passes the abort signal to the network operations', async () => {
+      const mockFileExecAsync = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+      const url = 'https://github.com/user/repo.git';
+      const directory = '/tmp/repo';
+      const { signal } = new AbortController();
+
+      await execGitShallowClone(url, directory, undefined, { execFileAsync: mockFileExecAsync }, signal);
+      await execGitShallowClone(url, directory, 'main', { execFileAsync: mockFileExecAsync }, signal);
+
+      expect(mockFileExecAsync).toHaveBeenCalledWith(
+        'git',
+        ['clone', '--depth', '1', '--', url, directory],
+        expect.objectContaining({ timeout: 30000, signal }),
+      );
+      expect(mockFileExecAsync).toHaveBeenCalledWith(
+        'git',
+        ['-C', directory, 'fetch', '--depth', '1', 'origin', '--end-of-options', 'main'],
+        expect.objectContaining({ timeout: 30000, signal }),
       );
     });
 
@@ -174,7 +259,7 @@ file2.ts
       expect(mockFileExecAsync).toHaveBeenNthCalledWith(
         3,
         'git',
-        ['-C', directory, 'fetch', '--depth', '1', 'origin', remoteBranch],
+        ['-C', directory, 'fetch', '--depth', '1', 'origin', '--end-of-options', remoteBranch],
         expectGitRemoteOpts,
       );
       expect(mockFileExecAsync).toHaveBeenNthCalledWith(4, 'git', ['-C', directory, 'checkout', 'FETCH_HEAD']);
@@ -207,7 +292,7 @@ file2.ts
       ]);
       expect(mockFileExecAsync).toHaveBeenLastCalledWith(
         'git',
-        ['-C', directory, 'fetch', '--depth', '1', 'origin', remoteBranch],
+        ['-C', directory, 'fetch', '--depth', '1', 'origin', '--end-of-options', remoteBranch],
         expectGitRemoteOpts,
       );
     });
@@ -242,7 +327,7 @@ file2.ts
       expect(mockFileExecAsync).toHaveBeenNthCalledWith(
         3,
         'git',
-        ['-C', directory, 'fetch', '--depth', '1', 'origin', shortSha],
+        ['-C', directory, 'fetch', '--depth', '1', 'origin', '--end-of-options', shortSha],
         expectGitRemoteOpts,
       );
       expect(mockFileExecAsync).toHaveBeenNthCalledWith(
@@ -251,7 +336,13 @@ file2.ts
         ['-C', directory, 'fetch', 'origin'],
         expectGitRemoteOpts,
       );
-      expect(mockFileExecAsync).toHaveBeenLastCalledWith('git', ['-C', directory, 'checkout', shortSha]);
+      expect(mockFileExecAsync).toHaveBeenLastCalledWith('git', [
+        '-C',
+        directory,
+        'checkout',
+        '--end-of-options',
+        shortSha,
+      ]);
     });
 
     test("should throw error when remote ref is not found, and it's not due to short SHA", async () => {
@@ -282,9 +373,25 @@ file2.ts
       ]);
       expect(mockFileExecAsync).toHaveBeenLastCalledWith(
         'git',
-        ['-C', directory, 'fetch', '--depth', '1', 'origin', remoteBranch],
+        ['-C', directory, 'fetch', '--depth', '1', 'origin', '--end-of-options', remoteBranch],
         expectGitRemoteOpts,
       );
+    });
+
+    test.each([
+      ['--upload-pack', '--upload-pack=touch /tmp/pwned'],
+      ['--config option', '--config=core.sshCommand=evil'],
+      ['leading dash', '-evil'],
+    ])('should reject branch/ref that could be a git option (%s)', async (_desc, remoteBranch) => {
+      const mockFileExecAsync = vi.fn();
+      const url = 'https://github.com/user/repo.git';
+      const directory = '/tmp/repo';
+
+      await expect(
+        execGitShallowClone(url, directory, remoteBranch, { execFileAsync: mockFileExecAsync }),
+      ).rejects.toThrow("Invalid branch or ref name. Name must not start with '-'");
+
+      expect(mockFileExecAsync).not.toHaveBeenCalled();
     });
   });
 
@@ -304,7 +411,14 @@ test/feature.test.ts`;
       expect(mockFileExecAsync).toHaveBeenCalledWith('git', [
         '-C',
         '/test/dir',
+        '-c',
+        'core.fsmonitor=',
+        '-c',
+        'core.quotePath=false',
         'log',
+        '--no-show-signature',
+        '--no-ext-diff',
+        '--no-textconv',
         '--pretty=format:%x00%ad|%s',
         '--date=iso',
         '--name-only',
@@ -325,7 +439,14 @@ file1.txt`;
       expect(mockFileExecAsync).toHaveBeenCalledWith('git', [
         '-C',
         '/test/dir',
+        '-c',
+        'core.fsmonitor=',
+        '-c',
+        'core.quotePath=false',
         'log',
+        '--no-show-signature',
+        '--no-ext-diff',
+        '--no-textconv',
         `--pretty=format:${customSeparator}%ad|%s`,
         '--date=iso',
         '--name-only',
@@ -355,7 +476,14 @@ file.txt`;
       expect(mockFileExecAsync).toHaveBeenCalledWith('git', [
         '-C',
         '/test/dir',
+        '-c',
+        'core.fsmonitor=',
+        '-c',
+        'core.quotePath=false',
         'log',
+        '--no-show-signature',
+        '--no-ext-diff',
+        '--no-textconv',
         `--pretty=format:${separator}%ad|%s`,
         '--date=iso',
         '--name-only',
@@ -412,4 +540,237 @@ c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8\trefs/tags/v1.0.0
       expect(logger.trace).toHaveBeenCalledWith('Failed to execute git ls-remote:', 'git command failed');
     });
   });
+
+  describe('execLsRemoteHead', () => {
+    test('should query only HEAD instead of all refs', async () => {
+      const mockOutput = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6\tHEAD';
+      const mockFileExecAsync = vi.fn().mockResolvedValue({ stdout: mockOutput });
+
+      const result = await execLsRemoteHead('https://github.com/user/repo.git', {
+        execFileAsync: mockFileExecAsync,
+      });
+
+      expect(result).toBe(mockOutput);
+      expect(mockFileExecAsync).toHaveBeenCalledWith(
+        'git',
+        ['ls-remote', '--', 'https://github.com/user/repo.git', 'HEAD'],
+        expectGitProbeOpts,
+      );
+    });
+
+    test('should throw error when git ls-remote HEAD fails', async () => {
+      const mockFileExecAsync = vi.fn().mockRejectedValue(new Error('repository not found'));
+
+      await expect(
+        execLsRemoteHead('https://github.com/user/nonexistent.git', { execFileAsync: mockFileExecAsync }),
+      ).rejects.toThrow('repository not found');
+      expect(logger.trace).toHaveBeenCalledWith('Failed to execute git ls-remote HEAD:', 'repository not found');
+    });
+
+    test('should validate URL before executing', async () => {
+      const mockFileExecAsync = vi.fn();
+
+      await expect(
+        execLsRemoteHead('https://github.com/user/repo.git --upload-pack=evil-command', {
+          execFileAsync: mockFileExecAsync,
+        }),
+      ).rejects.toThrow('Invalid repository URL. URL contains potentially dangerous parameters');
+      expect(mockFileExecAsync).not.toHaveBeenCalled();
+    });
+  });
 });
+
+// End-to-end, nothing mocked: a real repository carrying a malicious .git/config
+// is built and pushed through the real git subprocess. git honors a repository's
+// own config, so without the hardening args a plain `git log` here would run the
+// configured gpg.program. This proves the hardening holds against real git,
+// including whichever executable-config behaviors the installed git version has.
+//
+// POSIX-only: the payload is a `#!/bin/sh` script and the config sets
+// gpg.program to an absolute path, which on Windows contains backslashes that
+// git's config parser reads as escape sequences. The cross-platform guarantee
+// is covered by the exact-argument assertions above; this block proves the
+// on-disk execution behavior where it can actually run.
+(process.platform === 'win32' ? describe.skip : describe)(
+  'gitCommand — an untrusted repository cannot execute code through git',
+  () => {
+    const realExec = promisify(execFile);
+    let workDir: string;
+    let markerPath: string;
+
+    beforeAll(async () => {
+      workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'repomix-git-untrusted-'));
+    });
+
+    afterAll(async () => {
+      await fs.rm(workDir, { recursive: true, force: true });
+    });
+
+    // A repository whose own config runs `markerPath`'s writer when git verifies a
+    // signature, plus a commit crafted with a gpgsig header so a signature exists to
+    // verify. `git log` alone then invokes gpg.program.
+    const buildMaliciousRepo = async (repoDir: string, marker: string): Promise<void> => {
+      const git = (...args: string[]) => execFileSync('git', ['-C', repoDir, ...args], { stdio: 'pipe' });
+      await fs.mkdir(repoDir, { recursive: true });
+      execFileSync('git', ['init', '-q', repoDir], { stdio: 'pipe' });
+      git('config', 'user.email', 'a@b.c');
+      git('config', 'user.name', 'a');
+      await fs.writeFile(path.join(repoDir, 'f.txt'), 'hi\n');
+      git('add', 'f.txt');
+      git('commit', '-q', '-m', 'init');
+      const tree = git('write-tree').toString().trim();
+
+      const payload = path.join(repoDir, 'pwn.sh');
+      await fs.writeFile(payload, `#!/bin/sh\ntouch "${marker}"\necho '[GNUPG:] GOODSIG fake' 1>&2\nexit 0\n`);
+      await fs.chmod(payload, 0o755);
+      await fs.appendFile(
+        path.join(repoDir, '.git', 'config'),
+        `\n[log]\n\tshowSignature = true\n[gpg]\n\tprogram = ${payload}\n`,
+      );
+
+      const raw =
+        `tree ${tree}\n` +
+        'author a <a@b.c> 1700000000 +0000\n' +
+        'committer a <a@b.c> 1700000000 +0000\n' +
+        'gpgsig -----BEGIN PGP SIGNATURE-----\n \n fake\n -----END PGP SIGNATURE-----\n\nsigned\n';
+      const rawPath = path.join(repoDir, 'rawc');
+      await fs.writeFile(rawPath, raw);
+      const commit = execFileSync('git', ['-C', repoDir, 'hash-object', '-t', 'commit', '-w', 'rawc'])
+        .toString()
+        .trim();
+      git('update-ref', 'refs/heads/main', commit);
+      git('symbolic-ref', 'HEAD', 'refs/heads/main');
+      await fs.rm(rawPath, { force: true });
+    };
+
+    const exists = async (filePath: string): Promise<boolean> => {
+      try {
+        await fs.access(filePath);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    test('execGitLogFilenames does not run gpg.program from the repo .git/config', async () => {
+      const repoDir = await fs.mkdtemp(path.join(workDir, 'repo-'));
+      markerPath = path.join(workDir, `marker-log-${path.basename(repoDir)}`);
+      await buildMaliciousRepo(repoDir, markerPath);
+
+      // Uses the real execFileAsync (no deps override), so this exercises the
+      // hardened argument list against the installed git.
+      const files = await execGitLogFilenames(repoDir, 100, { execFileAsync: realExec });
+
+      expect(await exists(markerPath)).toBe(false);
+      // The command still works — it lists the repository's files, it just does
+      // not honor the malicious signature-verification config.
+      expect(files).toContain('f.txt');
+    });
+
+    test('the same repo does execute when git runs with its config honored', async () => {
+      // Positive control: proves the payload is live and reachable by `git log` on
+      // this host, so the assertion above is testing the hardening and not a
+      // payload that quietly stopped working on this git version.
+      const repoDir = await fs.mkdtemp(path.join(workDir, 'control-'));
+      const controlMarker = path.join(workDir, `marker-control-${path.basename(repoDir)}`);
+      await buildMaliciousRepo(repoDir, controlMarker);
+
+      await realExec('git', ['-C', repoDir, 'log', '--pretty=format:', '--name-only', '-n', '100']);
+
+      expect(await exists(controlMarker)).toBe(true);
+    });
+
+    // A repository whose config runs a diff.external driver, plus an unstaged edit
+    // so `git diff` produces a diff and reaches the driver.
+    const buildMaliciousDiffRepo = async (repoDir: string, marker: string): Promise<void> => {
+      const git = (...args: string[]) => execFileSync('git', ['-C', repoDir, ...args], { stdio: 'pipe' });
+      await fs.mkdir(repoDir, { recursive: true });
+      execFileSync('git', ['init', '-q', repoDir], { stdio: 'pipe' });
+      git('config', 'user.email', 'a@b.c');
+      git('config', 'user.name', 'a');
+      await fs.writeFile(path.join(repoDir, 'pwn.sh'), `#!/bin/sh\ntouch "${marker}"\nexit 0\n`);
+      await fs.chmod(path.join(repoDir, 'pwn.sh'), 0o755);
+      await fs.writeFile(path.join(repoDir, 'f.txt'), 'one\n');
+      git('add', 'f.txt', 'pwn.sh');
+      git('commit', '-q', '-m', 'init');
+      // git runs diff.external through a shell, so a relative ./pwn.sh keeps the
+      // command space-free even when the repo sits under a path with spaces (the
+      // gpg.program vector above is exec'd directly, so it is not affected).
+      await fs.appendFile(path.join(repoDir, '.git', 'config'), '\n[diff]\n\texternal = ./pwn.sh\n');
+      await fs.writeFile(path.join(repoDir, 'f.txt'), 'one\ntwo\n'); // unstaged edit
+    };
+
+    test('execGitDiff does not run diff.external from the repo .git/config', async () => {
+      const repoDir = await fs.mkdtemp(path.join(workDir, 'diff-'));
+      const marker = path.join(workDir, `marker-diff-${path.basename(repoDir)}`);
+      await buildMaliciousDiffRepo(repoDir, marker);
+
+      await execGitDiff(repoDir, [], { execFileAsync: realExec });
+      expect(await exists(marker)).toBe(false);
+
+      // Positive control: the same repo does fire the driver when git honors its
+      // config, so the assertion above tests the hardening, not a dead payload.
+      const controlMarker = path.join(workDir, `marker-diff-control-${path.basename(repoDir)}`);
+      await fs.writeFile(path.join(repoDir, 'pwn.sh'), `#!/bin/sh\ntouch "${controlMarker}"\nexit 0\n`);
+      await realExec('git', ['-C', repoDir, 'diff']);
+      expect(await exists(controlMarker)).toBe(true);
+    });
+  },
+);
+
+// End-to-end, nothing mocked: git C-quotes bytes outside ASCII by default
+// (core.quotePath=true), so a UTF-8 filename comes back as "\346\227\245...".
+// Repomix prints those paths in the git-logs and git-diffs sections and uses them
+// as the keys for its change-count sort, so every command must request git's
+// raw-UTF-8 form.
+// POSIX-only: the filename is created as UTF-8 on disk; Windows filesystem
+// APIs and the child-process encoding are a separate concern.
+(process.platform === 'win32' ? describe.skip : describe)(
+  'gitCommand — non-ASCII filenames are emitted verbatim',
+  () => {
+    const realExec = promisify(execFile);
+    const unicodeName = '日本語.txt';
+    let repoDir: string;
+
+    beforeAll(async () => {
+      repoDir = await fs.mkdtemp(path.join(os.tmpdir(), 'repomix-git-quotepath-'));
+      const git = (...args: string[]) => execFileSync('git', ['-C', repoDir, ...args], { stdio: 'pipe' });
+      git('init', '-q');
+      git('config', 'user.email', 'a@b.c');
+      git('config', 'user.name', 'a');
+      // Reproduce git's default on a machine whose global config does not already
+      // override it, so the assertion cannot pass just because quotePath is off.
+      git('config', 'core.quotePath', 'true');
+      await fs.writeFile(path.join(repoDir, unicodeName), 'x\n');
+      await fs.writeFile(path.join(repoDir, 'plain.txt'), 'y\n');
+      git('add', '.');
+      git('commit', '-q', '-m', 'init');
+    });
+
+    afterAll(async () => {
+      await fs.rm(repoDir, { recursive: true, force: true });
+    });
+
+    test('execGitLogFilenames returns the raw filename', async () => {
+      const files = await execGitLogFilenames(repoDir, 100, { execFileAsync: realExec });
+
+      expect(files).toContain(unicodeName);
+    });
+
+    test('execGitLog returns the raw filename', async () => {
+      const log = await execGitLog(repoDir, 100, '%x00', { execFileAsync: realExec });
+
+      expect(log).toContain(unicodeName);
+      expect(log).not.toContain('\\346');
+    });
+
+    test('execGitDiff returns the raw filename', async () => {
+      await fs.writeFile(path.join(repoDir, unicodeName), 'changed\n');
+
+      const diff = await execGitDiff(repoDir, [], { execFileAsync: realExec });
+
+      expect(diff).toContain(`diff --git a/${unicodeName} b/${unicodeName}`);
+      expect(diff).not.toContain('\\346');
+    });
+  },
+);

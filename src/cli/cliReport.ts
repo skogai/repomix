@@ -5,13 +5,14 @@ import type { SkippedFileInfo } from '../core/file/fileCollect.js';
 import type { PackResult } from '../core/packager.js';
 import type { SuspiciousFileResult } from '../core/security/securityCheck.js';
 import { logger } from '../shared/logger.js';
+import { isPathWithin } from '../shared/pathUtils.js';
 import { reportTokenCountTree } from './reporters/tokenCountTreeReporter.js';
 
 /**
  * Convert an absolute path to a relative path if it's under cwd, otherwise return as-is.
  */
 export const getDisplayPath = (absolutePath: string, cwd: string): string => {
-  return absolutePath.startsWith(cwd) ? path.relative(cwd, absolutePath) : absolutePath;
+  return isPathWithin(cwd, absolutePath) ? path.relative(cwd, absolutePath) : absolutePath;
 };
 
 export interface ReportOptions {
@@ -26,6 +27,9 @@ export const reportResults = (
   packResult: PackResult,
   config: RepomixConfigMerged,
   options: ReportOptions = {},
+  deps = {
+    reportTokenCountTree,
+  },
 ): void => {
   logger.log('');
 
@@ -39,8 +43,10 @@ export const reportResults = (
     logger.log('');
   }
 
-  if (config.output.tokenCountTree) {
-    reportTokenCountTree(packResult.processedFiles, packResult.fileTokenCounts, config);
+  // 0 is a valid threshold ("show files with >= 0 tokens"); only `false` or
+  // an unset value disables the tree.
+  if (config.output.tokenCountTree !== false && config.output.tokenCountTree !== undefined) {
+    deps.reportTokenCountTree(packResult.processedFiles, packResult.fileTokenCounts, config);
     logger.log('');
   }
 

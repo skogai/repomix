@@ -22,6 +22,7 @@ export const configKo = defineConfig({
             { text: '기본 사용법', link: '/ko/guide/usage' },
             { text: '프롬프트 예제', link: '/ko/guide/prompt-examples' },
             { text: '사용 사례', link: '/ko/guide/use-cases' },
+            { text: 'FAQ 및 문제 해결', link: '/ko/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configKo = defineConfig({
           items: [
             { text: '출력 형식', link: '/ko/guide/output' },
             { text: '명령줄 옵션', link: '/ko/guide/command-line-options' },
+            { text: '감시 모드', link: '/ko/guide/watch-mode' },
             { text: '설정', link: '/ko/guide/configuration' },
             { text: '사용자 정의 지침', link: '/ko/guide/custom-instructions' },
             { text: 'GitHub 저장소 처리', link: '/ko/guide/remote-repository-processing' },

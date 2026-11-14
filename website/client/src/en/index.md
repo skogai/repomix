@@ -2,6 +2,7 @@
 layout: home
 title: Repomix
 titleTemplate: Pack your codebase into AI-friendly formats
+description: Pack local or remote repositories into AI-friendly XML, Markdown, JSON, or plain text for Claude, ChatGPT, Gemini, MCP, and code review workflows.
 aside: false
 editLink: false
 
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: Security-Focused
-    details: Incorporates Secretlint for robust security checks to detect and prevent inclusion of sensitive information.
+    details: Incorporates Secretlint to detect files matching known credential formats and leave them out of the output.
 
   - icon: 📊
     title: Token Counting

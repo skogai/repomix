@@ -1,3 +1,8 @@
+---
+title: "Options de ligne de commande"
+description: "Consultez toutes les options de la CLI Repomix pour l'entrée, la sortie, la sélection de fichiers, les dépôts distants, la configuration, la sécurité, le comptage des tokens, MCP et les Agent Skills."
+---
+
 # Options de ligne de commande
 
 ## Options de base
@@ -21,6 +26,7 @@
 |--------|-------------|
 | `-o, --output <file>` | Chemin du fichier de sortie (par défaut : `repomix-output.xml`, utiliser `"-"` pour stdout) |
 | `--style <style>` | Format de sortie : `xml`, `markdown`, `json` ou `plain` (par défaut : `xml`) |
+| `--output-file-path-style <style>` | Façon dont les chemins de fichiers sont affichés dans la sortie : `target-relative` ou `cwd-relative` (par défaut : `target-relative`) |
 | `--parsable-style` | Échapper les caractères spéciaux pour assurer un XML/Markdown valide (nécessaire lorsque la sortie contient du code qui casse le formatage) |
 | `--compress` | Extraire la structure essentielle du code (classes, fonctions, interfaces) via l'analyse Tree-sitter |
 | `--output-show-line-numbers` | Préfixer chaque ligne avec son numéro de ligne dans la sortie |
@@ -56,7 +62,7 @@
 |--------|-------------|
 | `--remote <url>` | Cloner et empaqueter un dépôt distant (URL GitHub ou format `user/repo`) |
 | `--remote-branch <name>` | Branche, tag ou commit spécifique à utiliser (par défaut : branche par défaut du dépôt) |
-| `--remote-trust-config` | Faire confiance et charger les fichiers de configuration des dépôts distants (désactivé par défaut pour la sécurité) |
+| `--remote-trust-config` | Faire confiance et charger les fichiers de configuration des dépôts distants. Une configuration de confiance peut exécuter des commandes et lire des fichiers locaux ; n'utilisez cette option que pour des dépôts auxquels vous faites entièrement confiance (désactivé par défaut pour la sécurité). Dans un terminal interactif, la configuration est affichée et une confirmation est demandée |
 
 ## Options de configuration
 
@@ -71,17 +77,26 @@
 
 ## Options de comptage de jetons
 - `--token-count-encoding <encoding>`: Modèle de tokenizer pour le comptage : o200k_base (GPT-4o), cl100k_base (GPT-3.5/4), etc. (par défaut : o200k_base)
+- `--token-budget <number>`: Échouer avec un code de sortie non nul lorsque la sortie empaquetée dépasse N jetons. Utile comme garde-fou dans les pipelines CI et les workflows d'agents pour maintenir la sortie dans la fenêtre de contexte d'un modèle cible. La sortie est tout de même générée ; seul le code de sortie signale le dépassement.
 
 ## Options MCP
 - `--mcp`: Fonctionner comme serveur Model Context Protocol pour l'intégration d'outils IA
+- `--sandbox [dir]`: (avec `--mcp`) Confiner les outils de fichiers du serveur MCP à un répertoire de travail (par défaut le répertoire courant ; ex : `--sandbox path/to/project`). Chaque chemin est relatif à cette racine, les chemins absolus/de l'hôte sont refusés, et l'empaquetage de dépôts distants, la génération de skills et l'attachement de sorties externes sont désactivés. Voir [Serveur MCP](/fr/guide/mcp-server).
 
 ## Options de génération d'Agent Skills
 
 | Option | Description |
 |--------|-------------|
 | `--skill-generate [name]` | Générer une sortie au format Claude Agent Skills dans le répertoire `.claude/skills/<name>/` (nom auto-généré si omis) |
+| `--skill-project-name <name>` | Remplacer le nom du projet utilisé dans les descriptions des Skills générées |
 | `--skill-output <path>` | Spécifier directement le chemin du répertoire de sortie des skills (ignore l'invite d'emplacement) |
-| `-f, --force` | Ignorer toutes les invites de confirmation (ex : remplacement du répertoire de skills) |
+| `-f, --force` | Ignorer toutes les invites de confirmation (remplacement du répertoire de skills, confiance accordée à la configuration distante) |
+
+## Options du mode surveillance
+
+- `-w, --watch`: Surveille les modifications de fichiers et reconditionne automatiquement. Les fichiers ajoutés, modifiés et supprimés sont détectés, les changements rapides sont regroupés (debounce de 300 ms), et un horodatage est affiché après chaque reconstruction. Appuyez sur `Ctrl+C` pour arrêter.
+
+Le mode surveillance ne fonctionne qu'avec des répertoires locaux ; il ne peut donc pas être combiné avec `--remote`, une URL de dépôt distant passée en argument positionnel, `--stdout`, `--stdin`, `--split-output`, `--skill-generate` ou `--copy`. Ces restrictions s'appliquent que l'option soit définie en ligne de commande ou dans votre fichier de configuration.
 
 ## Ressources associées
 
@@ -120,6 +135,9 @@ repomix --remote https://github.com/user/repo/commit/836abcd7335137228ad77feb286
 # Dépôt distant avec forme abrégée
 repomix --remote user/repo
 
+# Dépôt distant avec forme abrégée (détecté automatiquement, sans --remote)
+repomix user/repo
+
 # Liste de fichiers utilisant stdin
 find src -name "*.ts" -type f | repomix --stdin
 git ls-files "*.js" | repomix --stdin
@@ -134,5 +152,9 @@ repomix --include-diffs --include-logs  # Inclure à la fois les diffs et les jo
 # Analyse du comptage de jetons
 repomix --token-count-tree
 repomix --token-count-tree 1000  # Afficher uniquement les fichiers/répertoires avec 1000+ jetons
+
+# Mode surveillance : reconditionnement automatique à chaque modification de fichier
+repomix --watch
+repomix -w --include "src/**/*.ts"
 ```
 

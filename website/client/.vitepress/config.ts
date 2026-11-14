@@ -1,5 +1,26 @@
 import { defineConfig } from 'vitepress';
 import { configDe } from './config/configDe';
+
+// Cloudflare production deploys must inject a real Turnstile site key.
+// VitePress's SSR catches in-component throws and exits 0, so a missing env
+// var would silently ship the always-passes test sitekey. Throwing at config
+// load fails the build immediately so the deploy is surfaced as broken.
+//
+// Scope: only the production-branch Cloudflare Pages or Workers Builds deploy.
+// Preview deploys (PRs, branch builds), local `docs:build`, and CI builds run
+// without the env var by design — those use the test sitekey. The runtime throw
+// inside useTurnstile() is the second line of defence: any actual production
+// page load with the test key fallback fails the form mount loudly.
+//
+// Cloudflare injects the branch name through provider-specific variables.
+const isCfPagesProductionDeploy = process.env.CF_PAGES === '1' && process.env.CF_PAGES_BRANCH === 'main';
+const isWorkersProductionDeploy = process.env.WORKERS_CI === '1' && process.env.WORKERS_CI_BRANCH === 'main';
+if ((isCfPagesProductionDeploy || isWorkersProductionDeploy) && !process.env.VITE_TURNSTILE_SITE_KEY) {
+  throw new Error(
+    'VITE_TURNSTILE_SITE_KEY must be set for the Cloudflare production deploy. Configure it in the production build environment and retry.',
+  );
+}
+
 import { configEnUs } from './config/configEnUs';
 import { configEs } from './config/configEs';
 import { configFr } from './config/configFr';

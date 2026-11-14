@@ -1,3 +1,8 @@
+---
+title: 기본 사용법
+description: "Repomix CLI로 디렉터리, 원격 저장소, 선택한 파일, git diff, 커밋 로그, 분할 출력, 토큰 수, 압축 코드를 다루는 기본 사용법을 설명합니다."
+---
+
 # 기본 사용법
 
 ## 빠른 시작
@@ -50,6 +55,9 @@ repomix --remote https://github.com/user/repo
 
 # 단축형 사용
 repomix --remote user/repo
+
+# --remote 없이 단축형 사용 (자동 감지)
+repomix user/repo
 
 # 특정 브랜치/태그/커밋
 repomix --remote user/repo --remote-branch main

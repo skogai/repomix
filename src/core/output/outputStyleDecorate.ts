@@ -1,4 +1,5 @@
 import type { RepomixConfigMerged } from '../../config/configSchema.js';
+import { isNegatedIgnorePattern } from '../file/fileSearch.js';
 
 interface ContentInfo {
   selection: {
@@ -22,12 +23,16 @@ interface ContentInfo {
   };
 }
 
+// Negated patterns are skipped by the file search, so they must not be reported as exclusions.
+const getEffectiveIgnorePatterns = (config: RepomixConfigMerged): string[] =>
+  config.ignore.customPatterns.filter((pattern) => !isNegatedIgnorePattern(pattern));
+
 export const analyzeContent = (config: RepomixConfigMerged): ContentInfo => {
   return {
     selection: {
-      isEntireCodebase: !config.include.length && !config.ignore.customPatterns.length,
+      isEntireCodebase: !config.include.length && !getEffectiveIgnorePatterns(config).length,
       include: config.include.length > 0,
-      ignore: config.ignore.customPatterns.length > 0,
+      ignore: getEffectiveIgnorePatterns(config).length > 0,
       gitignore: config.ignore.useGitignore,
       defaultIgnore: config.ignore.useDefaultPatterns,
     },
@@ -37,7 +42,14 @@ export const analyzeContent = (config: RepomixConfigMerged): ContentInfo => {
       securityCheckEnabled: config.security.enableSecurityCheck,
       showLineNumbers: config.output.showLineNumbers,
       parsableStyle: config.output.parsableStyle,
-      compressed: config.output.compress,
+      // True when compression is applied globally or to any subset via output.patterns,
+      // so the header note accurately reflects that some content uses the ⋮---- delimiter.
+      // A pattern only compresses when directoryStructureOnly does not take precedence
+      // over compress (matching resolveFileLevel), so both flags together omit content
+      // rather than compressing it.
+      compressed:
+        config.output.compress ||
+        (config.output.patterns?.some((p) => p.compress === true && p.directoryStructureOnly !== true) ?? false),
       truncatedBase64: config.output.truncateBase64,
     },
     sorting: {
@@ -152,7 +164,7 @@ export const generateSummaryNotes = (config: RepomixConfigMerged): string => {
     notes.push(`- Only files matching these patterns are included: ${config.include.join(', ')}`);
   }
   if (info.selection.ignore) {
-    notes.push(`- Files matching these patterns are excluded: ${config.ignore.customPatterns.join(', ')}`);
+    notes.push(`- Files matching these patterns are excluded: ${getEffectiveIgnorePatterns(config).join(', ')}`);
   }
   if (info.selection.gitignore) {
     notes.push('- Files matching patterns in .gitignore are excluded');

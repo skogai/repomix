@@ -1,6 +1,7 @@
 ---
 layout: home
 title: Repomix
+description: "Compacte repositórios locais ou remotos em XML, Markdown, JSON ou texto simples amigáveis para IA para Claude, ChatGPT, Gemini, MCP e revisão de código."
 titleTemplate: Compacte seu código-fonte em formatos amigáveis para IA
 aside: false
 editLink: false
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: Focado na Segurança
-    details: Incorpora o Secretlint para verificações de segurança robustas para detectar e prevenir a inclusão de informações confidenciais.
+    details: Incorpora o Secretlint para detectar arquivos que correspondem a formatos de credenciais conhecidos e excluí-los da saída.
 
   - icon: 📊
     title: Contagem de Tokens

@@ -1,6 +1,7 @@
 ---
 layout: home
 title: Repomix
+description: "Packen Sie lokale oder Remote-Repositories in KI-freundliches XML, Markdown, JSON oder Klartext für Claude, ChatGPT, Gemini, MCP und Code-Reviews."
 titleTemplate: Ihre Codebasis in KI-freundliche Formate verpacken
 aside: false
 editLink: false
@@ -16,7 +17,7 @@ features:
 
   - icon: 🛡️
     title: Sicherheitsorientiert
-    details: Integriert Secretlint für robuste Sicherheitsprüfungen zur Erkennung und Verhinderung der Aufnahme sensibler Informationen.
+    details: Integriert Secretlint, um Dateien zu erkennen, die bekannten Anmeldedatenformaten entsprechen, und lässt sie im Output aus.
 
   - icon: 📊
     title: Token-Zählung

@@ -22,6 +22,7 @@ export const configTr = defineConfig({
             { text: 'Temel Kullanım', link: '/tr/guide/usage' },
             { text: 'Prompt Örnekleri', link: '/tr/guide/prompt-examples' },
             { text: 'Kullanım Senaryoları', link: '/tr/guide/use-cases' },
+            { text: 'SSS ve sorun giderme', link: '/tr/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configTr = defineConfig({
           items: [
             { text: 'Çıktı Formatları', link: '/tr/guide/output' },
             { text: 'Komut Satırı Seçenekleri', link: '/tr/guide/command-line-options' },
+            { text: 'İzleme Modu', link: '/tr/guide/watch-mode' },
             { text: 'Yapılandırma', link: '/tr/guide/configuration' },
             { text: 'Özel Talimatlar', link: '/tr/guide/custom-instructions' },
             { text: 'GitHub Deposu İşleme', link: '/tr/guide/remote-repository-processing' },

@@ -1,3 +1,8 @@
+---
+title: "Opzioni da Linea di Comando"
+description: "Consulta tutte le opzioni della CLI Repomix per input, output, selezione file, repository remoti, configurazione, sicurezza, conteggio token, MCP e Agent Skills."
+---
+
 # Opzioni da Linea di Comando
 
 ## Opzioni Base
@@ -21,6 +26,7 @@
 |---------|-------------|
 | `-o, --output <file>` | Percorso del file di output (predefinito: `repomix-output.xml`, usa `"-"` per stdout) |
 | `--style <style>` | Formato di output: `xml`, `markdown`, `json` o `plain` (predefinito: `xml`) |
+| `--output-file-path-style <style>` | Come i percorsi dei file vengono mostrati nell'output: `target-relative` o `cwd-relative` (predefinito: `target-relative`) |
 | `--parsable-style` | Esegue l'escape dei caratteri speciali per garantire XML/Markdown valido (necessario quando l'output contiene codice che interrompe la formattazione) |
 | `--compress` | Estrae la struttura essenziale del codice (classi, funzioni, interfacce) tramite il parsing Tree-sitter |
 | `--output-show-line-numbers` | Prefissa ogni riga con il suo numero di riga nell'output |
@@ -56,7 +62,7 @@
 |---------|-------------|
 | `--remote <url>` | Clona e impacchetta un repository remoto (URL GitHub o formato `user/repo`) |
 | `--remote-branch <name>` | Branch, tag o commit specifico da usare (predefinito: branch predefinito del repository) |
-| `--remote-trust-config` | Considera affidabili e carica i file di configurazione dai repository remoti (disabilitato per impostazione predefinita per sicurezza) |
+| `--remote-trust-config` | Considera affidabili e carica i file di configurazione dai repository remoti. Una configurazione attendibile può eseguire comandi e leggere file locali, quindi usala solo per repository di cui ti fidi pienamente (disabilitato per impostazione predefinita per sicurezza). In un terminale interattivo, la configurazione viene mostrata e viene richiesta una conferma |
 
 ## Opzioni di Configurazione
 
@@ -71,17 +77,26 @@
 
 ## Opzioni di Conteggio Token
 - `--token-count-encoding <encoding>`: Modello di tokenizer per il conteggio: o200k_base (GPT-4o), cl100k_base (GPT-3.5/4), ecc. (predefinito: o200k_base)
+- `--token-budget <number>`: Termina con un codice di uscita diverso da zero quando l'output impacchettato supera N token. Utile come protezione nelle pipeline CI e nei workflow degli agenti per mantenere l'output entro la finestra di contesto di un modello di destinazione. L'output viene comunque generato; solo il codice di uscita segnala il superamento.
 
 ## Opzioni MCP
 - `--mcp`: Funziona come server Model Context Protocol per l'integrazione di strumenti IA
+- `--sandbox [dir]`: (con `--mcp`) Confina gli strumenti per il file system del server MCP a una directory di lavoro (per impostazione predefinita la directory di lavoro corrente; es: `--sandbox path/to/project`). Ogni percorso è relativo a quella radice, i percorsi assoluti/dell'host vengono rifiutati, e l'impacchettamento remoto, la generazione di skill e l'allegato di output esterni sono disabilitati. Consulta [Server MCP](/it/guide/mcp-server)
 
 ## Opzioni di Generazione Agent Skills
 
 | Opzione | Descrizione |
 |---------|-------------|
 | `--skill-generate [name]` | Genera output in formato Claude Agent Skills nella directory `.claude/skills/<name>/` (nome auto-generato se omesso) |
+| `--skill-project-name <name>` | Sovrascrivi il nome del progetto usato nelle descrizioni delle Skills generate |
 | `--skill-output <path>` | Specifica direttamente il percorso della directory di output delle skill (salta il prompt di posizione) |
-| `-f, --force` | Salta tutti i prompt di conferma (es: sovrascrittura della directory delle skill) |
+| `-f, --force` | Salta tutti i prompt di conferma (sovrascrittura della directory delle skill, fiducia nella configurazione remota) |
+
+## Opzioni della modalità Watch
+
+- `-w, --watch`: Monitora le modifiche ai file e ricompatta automaticamente. Vengono rilevati i file nuovi, modificati ed eliminati, le modifiche rapide vengono raggruppate con debounce (300 ms) e viene stampato un timestamp dopo ogni ricostruzione. Premi `Ctrl+C` per interrompere.
+
+La modalità watch funziona solo con directory locali, quindi non può essere combinata con `--remote`, un URL di repository remoto passato come argomento posizionale, `--stdout`, `--stdin`, `--split-output`, `--skill-generate` o `--copy`. Queste restrizioni si applicano sia che l'opzione venga impostata da riga di comando sia nel file di configurazione.
 
 ## Risorse correlate
 
@@ -120,6 +135,9 @@ repomix --remote https://github.com/user/repo/commit/836abcd7335137228ad77feb286
 # Repository remoto con forma abbreviata
 repomix --remote user/repo
 
+# Repository remoto con forma abbreviata (rilevato automaticamente, senza --remote)
+repomix user/repo
+
 # Lista file usando stdin
 find src -name "*.ts" -type f | repomix --stdin
 git ls-files "*.js" | repomix --stdin
@@ -134,5 +152,9 @@ repomix --include-diffs --include-logs  # Include sia diff che log
 # Analisi del conteggio token
 repomix --token-count-tree
 repomix --token-count-tree 1000  # Mostra solo file/directory con 1000+ token
+
+# Modalità watch: ricompatta automaticamente quando i file cambiano
+repomix --watch
+repomix -w --include "src/**/*.ts"
 ```
 

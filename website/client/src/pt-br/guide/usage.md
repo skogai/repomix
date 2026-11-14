@@ -1,3 +1,8 @@
+---
+title: "Uso Básico"
+description: "Use a CLI do Repomix para empacotar diretórios, repositórios remotos, arquivos selecionados, diffs do git, logs de commits, saídas divididas, contagens de tokens e código comprimido."
+---
+
 # Uso Básico
 
 ## Início Rápido
@@ -50,6 +55,9 @@ repomix --remote https://github.com/user/repo
 
 # Usando abreviação
 repomix --remote user/repo
+
+# Usando atalho sem --remote (detectado automaticamente)
+repomix user/repo
 
 # Branch/tag/commit específico
 repomix --remote user/repo --remote-branch main

@@ -1,13 +1,16 @@
 import fs from 'node:fs/promises';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { createSecretLintConfig, runSecretLint } from '../../core/security/workers/securityCheckWorker.js';
 import { logger } from '../../shared/logger.js';
+import type { McpServerConfig } from '../mcpServer.js';
 import {
   buildMcpToolErrorResponse,
   buildMcpToolSuccessResponse,
+  buildSandboxErrorResponse,
   convertErrorToJson,
   getOutputFilePath,
+  requiresSecretScan,
 } from './mcpToolRuntime.js';
 
 const readRepomixOutputInputSchema = z.object({
@@ -33,7 +36,18 @@ const readRepomixOutputOutputSchema = z.object({
 /**
  * Register the tool to read Repomix output files
  */
-export const registerReadRepomixOutputTool = (mcpServer: McpServer) => {
+export const registerReadRepomixOutputTool = (
+  mcpServer: McpServer,
+  config: McpServerConfig = { sandboxed: false, root: process.cwd() },
+  deps = {
+    access: fs.access,
+    readFile: fs.readFile,
+    getOutputFilePath,
+    requiresSecretScan,
+    createSecretLintConfig,
+    runSecretLint,
+  },
+) => {
   mcpServer.registerTool(
     'read_repomix_output',
     {
@@ -54,7 +68,7 @@ export const registerReadRepomixOutputTool = (mcpServer: McpServer) => {
         logger.trace(`Reading Repomix output with ID: ${outputId}`);
 
         // Get the file path from the registry
-        const filePath = getOutputFilePath(outputId);
+        const filePath = deps.getOutputFilePath(outputId);
         if (!filePath) {
           return buildMcpToolErrorResponse({
             errorMessage: `Error: Output file with ID ${outputId} not found. The output file may have been deleted or the ID is invalid.`,
@@ -63,15 +77,37 @@ export const registerReadRepomixOutputTool = (mcpServer: McpServer) => {
 
         // Check if the file exists
         try {
-          await fs.access(filePath);
+          await deps.access(filePath);
         } catch {
           return buildMcpToolErrorResponse({
-            errorMessage: `Error: Output file does not exist at path: ${filePath}. The temporary file may have been cleaned up.`,
+            errorMessage: config.sandboxed
+              ? `Error: Output ${outputId} is no longer available.`
+              : `Error: Output file does not exist at path: ${filePath}. The temporary file may have been cleaned up.`,
           });
         }
 
         // Read the file content
-        const content = await fs.readFile(filePath, 'utf8');
+        const content = await deps.readFile(filePath, 'utf8');
+
+        // For files attached from an untrusted path, scan for secrets before serving
+        // any content. This detects recognized secret formats in the content; it does
+        // not restrict which file the path points at.
+        if (deps.requiresSecretScan(outputId)) {
+          const securityCheckResult = await deps.runSecretLint(
+            filePath,
+            content,
+            'file',
+            deps.createSecretLintConfig(),
+          );
+          if (securityCheckResult !== null) {
+            return buildMcpToolErrorResponse({
+              errorMessage: config.sandboxed
+                ? `Error: Security check failed. Output ${outputId} may contain sensitive information.`
+                : `Error: Security check failed. The file at ${filePath} may contain sensitive information.`,
+            });
+          }
+        }
+
         const lines = content.split('\n');
         const totalLines = lines.length;
 
@@ -125,6 +161,7 @@ export const registerReadRepomixOutputTool = (mcpServer: McpServer) => {
         } satisfies z.infer<typeof readRepomixOutputOutputSchema>);
       } catch (error) {
         logger.error(`Error reading Repomix output: ${error}`);
+        if (config.sandboxed) return buildSandboxErrorResponse(error, outputId);
         return buildMcpToolErrorResponse(convertErrorToJson(error));
       }
     },

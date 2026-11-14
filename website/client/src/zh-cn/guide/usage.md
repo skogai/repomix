@@ -1,3 +1,8 @@
+---
+title: 基本用法
+description: 了解如何使用 Repomix CLI 打包目录、远程仓库、选定文件、git diff、提交日志、拆分输出、令牌计数和压缩代码。
+---
+
 # 基本用法
 
 ## 快速开始
@@ -50,6 +55,9 @@ repomix --remote https://github.com/user/repo
 
 # 使用简写形式
 repomix --remote user/repo
+
+# 不使用 --remote 的简写（自动检测）
+repomix user/repo
 
 # 指定分支/标签/提交
 repomix --remote user/repo --remote-branch main

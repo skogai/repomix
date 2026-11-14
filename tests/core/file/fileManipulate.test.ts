@@ -192,6 +192,24 @@ describe('fileManipulate', () => {
 `,
     },
     {
+      name: 'CSS unquoted URL is not treated as a line comment',
+      ext: '.css',
+      input: `
+        @import url(https://fonts.example.com/css?family=Inter);
+        .logo {
+          background: url(http://example.com/logo.png); /* Logo */
+          content: "/* not a comment */";
+        }
+      `,
+      expected: `
+        @import url(https://fonts.example.com/css?family=Inter);
+        .logo {
+          background: url(http://example.com/logo.png);
+          content: "/* not a comment */";
+        }
+`,
+    },
+    {
       name: 'HTML comment removal',
       ext: '.html',
       input: '<div><!-- Comment -->Content</div>',
@@ -900,6 +918,180 @@ r2 := '\\\\'`,
 `,
     },
     {
+      name: 'Shell parameter expansion is not treated as a comment',
+      ext: '.sh',
+      input: `base=\${name##*/}
+ext=\${name#*.}
+count=$#
+echo "value # not a comment"
+grep '# literal' file
+value=1  # real comment`,
+      expected: `base=\${name##*/}
+ext=\${name#*.}
+count=$#
+echo "value # not a comment"
+grep '# literal' file
+value=1`,
+    },
+    {
+      name: 'YAML unquoted hash in value is preserved',
+      ext: '.yaml',
+      input: `repo: https://github.com/a/b#readme
+color: "#ff0000"
+name: value  # trailing comment
+# full line comment
+plain: keep#this`,
+      expected: `repo: https://github.com/a/b#readme
+color: "#ff0000"
+name: value
+
+plain: keep#this`,
+    },
+    {
+      name: 'Shell heredoc body is preserved verbatim',
+      ext: '.sh',
+      input: `cat <<'EOF'
+# not a comment, this is heredoc content
+value # also literal
+EOF
+echo done  # real comment`,
+      expected: `cat <<'EOF'
+# not a comment, this is heredoc content
+value # also literal
+EOF
+echo done`,
+    },
+    {
+      name: 'YAML block scalar body is preserved verbatim',
+      ext: '.yaml',
+      input: `message: |
+  # not a comment
+  keep # this too
+summary: value  # real comment`,
+      expected: `message: |
+  # not a comment
+  keep # this too
+summary: value`,
+    },
+    {
+      name: 'YAML apostrophe in plain scalar does not disable comment stripping',
+      ext: '.yaml',
+      input: `note: it's fine  # trailing comment
+next: value  # another comment`,
+      expected: `note: it's fine
+next: value`,
+    },
+    {
+      name: 'YAML plain scalar ending in pipe is not treated as a block scalar',
+      ext: '.yaml',
+      input: `filter: a |
+  nested: value  # real comment`,
+      expected: `filter: a |
+  nested: value`,
+    },
+    {
+      name: 'Shell command substitution, case pattern, and escaped hash are not comments',
+      ext: '.sh',
+      input: `x=$(ls | grep -v "#")  # real comment
+case $x in
+  a) echo "#1" ;;  # real comment
+esac
+echo \\# literal  # real comment
+f() {
+  echo "\${1:-#}"  # real comment
+}`,
+      expected: `x=$(ls | grep -v "#")
+case $x in
+  a) echo "#1" ;;
+esac
+echo \\# literal
+f() {
+  echo "\${1:-#}"
+}`,
+    },
+    {
+      name: 'Shell herestring and ANSI-C quoting are not treated as heredoc or comment',
+      ext: '.sh',
+      input: `cat <<< "#not heredoc"  # real comment
+printf $'a#b\\n'  # real comment
+echo done  # real comment`,
+      expected: `cat <<< "#not heredoc"
+printf $'a#b\\n'
+echo done`,
+    },
+    {
+      name: 'Shell heredoc with <<- strips leading tabs when matching the delimiter',
+      ext: '.sh',
+      input: `cat <<-EOF
+\t# body
+\tEOF
+echo done  # real comment`,
+      expected: `cat <<-EOF
+\t# body
+\tEOF
+echo done`,
+    },
+    {
+      name: 'Shell double-quoted string spanning lines keeps hash inside',
+      ext: '.sh',
+      input: `x="a
+b # not a comment"  # real comment
+echo $x  # real comment`,
+      expected: `x="a
+b # not a comment"
+echo $x`,
+    },
+    {
+      name: 'YAML doubled single quote escape does not break quote tracking',
+      ext: '.yaml',
+      input: `a: 'It''s ok'  # real comment
+b: 1  # real comment`,
+      expected: `a: 'It''s ok'
+b: 1`,
+    },
+    {
+      name: 'YAML flow collections and quoted keys keep hash inside',
+      ext: '.yaml',
+      input: `a: [1, 2]  # real comment
+b: {x: "#y"}  # real comment
+"k#1": v  # real comment
+c: &base !!str v  # real comment`,
+      expected: `a: [1, 2]
+b: {x: "#y"}
+"k#1": v
+c: &base !!str v`,
+    },
+    {
+      name: 'YAML folded scalar and nested list block scalar end at dedent',
+      ext: '.yaml',
+      input: `a: >
+  line # kept
+b: 2  # real comment
+x:
+  - |
+    # kept
+  - y  # real comment`,
+      expected: `a: >
+  line # kept
+b: 2
+x:
+  - |
+    # kept
+  - y`,
+    },
+    {
+      name: 'YAML document markers and multi-line double-quoted scalar',
+      ext: '.yaml',
+      input: `---  # real comment
+a: "x
+  y"  # real comment
+...  # real comment`,
+      expected: `---
+a: "x
+  y"
+...`,
+    },
+    {
       name: 'Vue file comment removal',
       ext: '.vue',
       input: `
@@ -1038,6 +1230,197 @@ r2 := '\\\\'`,
     expect(manipulator).toBeNull();
   });
 
+  describe('SCSS, Sass and Less keep unquoted url() values', () => {
+    // These profiles have real `//` line comments, so an unquoted `url(http://...)` used to
+    // be cut at its `//` together with the rest of the line.
+    test.each(['.scss', '.sass', '.less'])('keeps absolute and protocol-relative URLs in %s', (ext) => {
+      const manipulator = getFileManipulator(`test${ext}`);
+      const input = [
+        '.a { background: url(http://example.com/a.png); } // trailing',
+        '.b { background: url( https://example.com/b.png ) no-repeat; }',
+        '.c { background: URL(//cdn.example.com/c.png), url(//cdn.example.com/d.png); }',
+        '// whole-line comment with url(http://example.com/gone.png)',
+        '/* block comment url(http://example.com/gone.png) */',
+        '.d { background: url(\'http://example.com/e.png\'); content: "// not a comment"; }',
+      ].join('\n');
+      expect(manipulator?.removeComments(input)).toBe(
+        [
+          '.a { background: url(http://example.com/a.png); }',
+          '.b { background: url( https://example.com/b.png ) no-repeat; }',
+          '.c { background: URL(//cdn.example.com/c.png), url(//cdn.example.com/d.png); }',
+          '',
+          '',
+          '.d { background: url(\'http://example.com/e.png\'); content: "// not a comment"; }',
+        ].join('\n'),
+      );
+    });
+
+    test('does not confuse file content that looks like a placeholder', () => {
+      const manipulator = getFileManipulator('test.scss');
+      const input = '$x: __REPOMIX_URL_0__; // comment\n.a { background: url(http://example.com/a.png); }';
+      expect(manipulator?.removeComments(input)).toBe(
+        '$x: __REPOMIX_URL_0__;\n.a { background: url(http://example.com/a.png); }',
+      );
+    });
+    test('keeps code after a block comment that mentions `url(`', () => {
+      const manipulator = getFileManipulator('test.scss');
+      const input = '/* The url( prefix */ .a { color: rgb(1, 2, 3); }';
+      expect(manipulator?.removeComments(input)).toBe(' .a { color: rgb(1, 2, 3); }');
+    });
+
+    test('keeps an unquoted URL that contains `*/`', () => {
+      const manipulator = getFileManipulator('test.scss');
+      const input = '.a { background: url(https://example.com/a*/b.png); color: red; }';
+      expect(manipulator?.removeComments(input)).toBe(input);
+    });
+    test('stays fast on many unclosed block comment openers', () => {
+      const manipulator = getFileManipulator('test.scss');
+      const input = `// ${'/* '.repeat(256_000)}\n.a { color: red; }`;
+      const start = performance.now();
+      expect(manipulator?.removeComments(input)).toBe('\n.a { color: red; }');
+      expect(performance.now() - start).toBeLessThan(2000);
+    });
+  });
+
+  describe('Vue and Svelte strip each section with its own language', () => {
+    test('keeps `//` in Vue markup and style, and keeps script tag attributes', () => {
+      const manipulator = getFileManipulator('App.vue');
+      const input = `<template>
+  <!-- HTML comment -->
+  <p>Visit http://example.com today</p>
+  <img src=http://example.com/a.png>
+</template>
+<script setup lang="ts" generic="T extends Record<string, unknown>">
+// JavaScript comment
+const url = 'http://example.com'; /* block */
+</script>
+<style scoped>
+/* CSS comment */
+.a { background: url(http://example.com/a.png); }
+</style>`;
+      expect(manipulator?.removeComments(input)).toBe(`<template>
+
+  <p>Visit http://example.com today</p>
+  <img src=http://example.com/a.png>
+</template>
+<script setup lang="ts" generic="T extends Record<string, unknown>">
+
+const url = 'http://example.com';
+</script>
+<style scoped>
+
+.a { background: url(http://example.com/a.png); }
+</style>`);
+    });
+
+    test('strips `//` comments in a Vue style block with lang="scss" but keeps its URLs', () => {
+      const manipulator = getFileManipulator('App.vue');
+      const input = `<style lang="scss">
+// SCSS comment
+.a { background: url(//cdn.example.com/a.png); }
+</style>
+<style lang="less">
+.b { background: url(https://example.com/b.png); } // Less comment
+</style>
+<style>
+.c { color: red; } // not a CSS comment, kept as-is
+</style>`;
+      expect(manipulator?.removeComments(input)).toBe(`<style lang="scss">
+
+.a { background: url(//cdn.example.com/a.png); }
+</style>
+<style lang="less">
+.b { background: url(https://example.com/b.png); }
+</style>
+<style>
+.c { color: red; } // not a CSS comment, kept as-is
+</style>`);
+    });
+
+    test('keeps `//` in Svelte markup', () => {
+      const manipulator = getFileManipulator('App.svelte');
+      const input = `<script lang="ts">
+  // JavaScript comment
+  let href = 'https://example.com';
+</script>
+
+<!-- HTML comment -->
+<a {href}>Docs at https://example.com/docs</a>
+<svelte:head>
+  <link rel="stylesheet" href=//cdn.example.com/a.css>
+</svelte:head>
+
+<style>
+  a { background: url(http://example.com/a.png); }
+</style>`;
+      expect(manipulator?.removeComments(input)).toBe(`<script lang="ts">
+
+  let href = 'https://example.com';
+</script>
+
+
+<a {href}>Docs at https://example.com/docs</a>
+<svelte:head>
+  <link rel="stylesheet" href=//cdn.example.com/a.css>
+</svelte:head>
+
+<style>
+  a { background: url(http://example.com/a.png); }
+</style>`);
+    });
+
+    test('treats a commented-out script as markup', () => {
+      const manipulator = getFileManipulator('App.vue');
+      const input = '<!-- <script>const a = 1;</script> -->\n<p>http://example.com</p>';
+      expect(manipulator?.removeComments(input)).toBe('\n<p>http://example.com</p>');
+    });
+    test('does not treat a hyphenated component such as <style-preview> as a style block', () => {
+      const manipulator = getFileManipulator('App.vue');
+      const input =
+        '<template><style-preview>Preview</style-preview></template>\n<style lang="scss">// comment\n.a{color:red}</style>';
+      expect(manipulator?.removeComments(input)).toBe(
+        '<template><style-preview>Preview</style-preview></template>\n<style lang="scss">\n.a{color:red}</style>',
+      );
+    });
+  });
+
+  describe('JS/TS module extension variants', () => {
+    // .mjs/.cjs/.mjsx/.mts/.cts/.mtsx are ESM/CommonJS variants of .js/.ts and are
+    // treated as JavaScript/TypeScript everywhere else (tree-sitter languageConfig,
+    // skill stats), so comment stripping must resolve a manipulator for them too.
+    test.each(['.mjs', '.cjs', '.mjsx', '.mts', '.cts', '.mtsx'])('resolves a manipulator for %s', (ext) => {
+      expect(getFileManipulator(`test${ext}`)).not.toBeNull();
+    });
+
+    test('strips comments from a .mjs file', () => {
+      const manipulator = getFileManipulator('eslint.config.mjs');
+      const input = 'const a = 1; // inline\n/* block */\nexport default a;';
+      expect(manipulator?.removeComments(input)).toBe('const a = 1;\n\nexport default a;');
+    });
+  });
+
+  describe('case-insensitive extension matching', () => {
+    // Extensions are matched case-insensitively, so files with uppercase or
+    // mixed-case extensions still resolve to a manipulator. Without this,
+    // removeComments and removeEmptyLines silently no-op on such files.
+    test.each(['.JS', '.Js', '.PY', '.CSS', '.C', '.HTML', '.Vue'])(
+      'resolves a manipulator for uppercase extension %s',
+      (ext) => {
+        expect(getFileManipulator(`test${ext}`)).not.toBeNull();
+      },
+    );
+
+    test('strips comments from a file with an uppercase extension', () => {
+      const manipulator = getFileManipulator('Main.JS');
+      const input = 'const a = 1; // inline\n/* block */\nconst b = 2;';
+      expect(manipulator?.removeComments(input)).toBe('const a = 1;\n\nconst b = 2;');
+    });
+
+    test('still returns null for unsupported uppercase extensions', () => {
+      expect(getFileManipulator('test.UNSUPPORTED')).toBeNull();
+    });
+  });
+
   describe('removeEmptyLines', () => {
     // BaseManipulator.removeEmptyLines is inherited by every concrete manipulator.
     // It runs after comment stripping in fileProcess to clean up the blanks left behind.
@@ -1058,7 +1441,7 @@ r2 := '\\\\'`,
       expect(manipulator?.removeEmptyLines('\n\n   \n')).toBe('');
     });
 
-    test('works for composite manipulators (.vue)', () => {
+    test('works for single-file component manipulators (.vue)', () => {
       const manipulator = getFileManipulator('test.vue');
       const input = 'a\n\nb';
       expect(manipulator?.removeEmptyLines(input)).toBe('a\nb');

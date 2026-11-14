@@ -1,3 +1,8 @@
+---
+title: 在 GitHub Actions 中使用 Repomix
+description: 在 GitHub Actions 中自動執行 Repomix，為 AI 分析、CI 流程、成品、程式碼審查與壓縮輸出打包儲存庫。
+---
+
 # 在 GitHub Actions 中使用 Repomix
 
 通過將 Repomix 集成到 GitHub Actions 工作流中，可以自動打包程式碼庫以供 AI 分析。這對於持續集成（CI）、程式碼審查或為 LLM 工具做準備非常有用。
@@ -61,7 +66,7 @@
     compress: true
 
 - name: Upload Repomix output
-  uses: actions/upload-artifact@v4
+  uses: actions/upload-artifact@v7
   with:
     name: repomix-output
     path: repomix-output.xml
@@ -105,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Pack repository with Repomix
         uses: yamadashy/repomix/.github/actions/repomix@main
@@ -113,7 +118,7 @@ jobs:
           output: repomix-output.xml
 
       - name: Upload Repomix output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: repomix-output.xml
           path: repomix-output.xml

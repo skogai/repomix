@@ -1,3 +1,8 @@
+---
+title: "Plugins do Claude Code"
+description: "Instale e use os plugins oficiais do Repomix para Claude Code com MCP, comandos slash e exploração de repositórios com IA."
+---
+
 # Plugins do Claude Code
 
 O Repomix fornece plugins oficiais para o [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) que se integram perfeitamente ao ambiente de desenvolvimento baseado em IA. Esses plugins facilitam a analise e o empacotamento de bases de codigo diretamente dentro do Claude Code usando comandos em linguagem natural.
@@ -50,7 +55,7 @@ Plugin base que fornece analise de base de codigo alimentada por IA atraves da i
 **Recursos:**
 - Empacotar repositorios locais e remotos
 - Pesquisar saidas empacotadas
-- Ler arquivos com verificacao de seguranca integrada ([Secretlint](https://github.com/secretlint/secretlint))
+- Ler arquivos de saida gerados
 - Compressao automatica Tree-sitter (reducao de aproximadamente 70% de tokens)
 
 ### 2. repomix-commands (Plugin de Comandos Slash)

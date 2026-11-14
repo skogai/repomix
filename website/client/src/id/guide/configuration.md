@@ -1,3 +1,8 @@
+---
+title: Konfigurasi
+description: Konfigurasikan Repomix dengan file JSON, JSONC, JSON5, JavaScript, atau TypeScript, termasuk format output, pola include dan ignore, serta opsi lanjutan.
+---
+
 # Konfigurasi
 
 Repomix dapat dikonfigurasi menggunakan file konfigurasi atau opsi baris perintah. File konfigurasi memungkinkan Anda untuk menyesuaikan berbagai aspek cara pemrosesan dan output codebase Anda.
@@ -86,10 +91,13 @@ File konfigurasi JavaScript bekerja sama seperti TypeScript, mendukung `defineCo
 | Opsi                             | Deskripsi                                                                                                                    | Default                |
 |----------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
 | `input.maxFileSize`              | Ukuran file maksimum dalam byte untuk diproses. File yang lebih besar akan dilewati. Berguna untuk mengecualikan file biner besar atau file data | `50000000`            |
+| `input.processors`               | Array berurutan berisi entri `{ pattern, command, timeout?, onError? }` yang menjalankan perintah eksternal untuk mentransformasi file yang cocok sebelum dikemas (mis. JSON→TOON). Glob pertama yang cocok yang menang. Menjalankan perintah arbitrer, sehingga hanya dijalankan untuk proses CLI lokal (dan repositori remote dengan `--remote-trust-config`). Lihat [Prosesor File](#prosesor-file) | Tidak diatur            |
 | `output.filePath`                | Nama file output. Mendukung format XML, Markdown, dan teks biasa                                                            | `"repomix-output.xml"` |
 | `output.style`                   | Gaya output (`xml`, `markdown`, `json`, `plain`). Setiap format memiliki keunggulan tersendiri untuk berbagai alat AI               | `"xml"`                |
+| `output.filePathStyle`           | Cara jalur file ditampilkan dalam output (`target-relative` menjaga jalur relatif terhadap setiap root target, `cwd-relative` menjaga jalur relatif terhadap direktori kerja saat ini) | `"target-relative"`    |
 | `output.parsableStyle`           | Apakah akan escape output berdasarkan skema gaya yang dipilih. Memungkinkan parsing yang lebih baik tetapi dapat meningkatkan jumlah token | `false`                |
 | `output.compress`                | Apakah akan melakukan ekstraksi kode cerdas menggunakan Tree-sitter untuk mengurangi jumlah token sambil mempertahankan struktur | `false`                |
+| `output.patterns`                | Level penyertaan per-file. Sebuah array terurut berisi entri `{ pattern, compress?, directoryStructureOnly? }`; glob pertama yang cocok yang menang dan menimpa `output.compress` global untuk file tersebut. Lihat [Level Penyertaan Per-file](#level-penyertaan-per-file) | Tidak diatur           |
 | `output.headerText`              | Teks kustom untuk disertakan dalam header file. Berguna untuk memberikan konteks atau instruksi untuk alat AI              | `null`                 |
 | `output.instructionFilePath`     | Path ke file yang berisi instruksi kustom rinci untuk pemrosesan AI                                                         | `null`                 |
 | `output.fileSummary`             | Apakah akan menyertakan bagian ringkasan di awal yang menampilkan jumlah file, ukuran, dan metrik lainnya                  | `true`                 |
@@ -101,6 +109,7 @@ File konfigurasi JavaScript bekerja sama seperti TypeScript, mendukung `defineCo
 | `output.truncateBase64`          | Apakah akan memotong string data base64 yang panjang (misalnya, gambar) untuk mengurangi jumlah token                      | `false`                |
 | `output.copyToClipboard`         | Apakah akan menyalin output ke clipboard sistem selain menyimpan file                                                       | `false`                |
 | `output.splitOutput`             | Membagi output menjadi beberapa file bernomor berdasarkan ukuran maksimum per bagian (mis., `1000000` untuk ~1MB). CLI menerima ukuran yang dapat dibaca seperti `500kb` atau `2mb`. Menjaga setiap file di bawah batas dan menghindari pemisahan file sumber antar bagian | Tidak diatur |
+| `output.tokenBudget`             | Gagal dengan kode keluar bukan nol saat output yang dikemas melebihi jumlah token ini. Berfungsi sebagai pengaman untuk batas konteks CI/agen; output tetap dihasilkan | Tidak diatur |
 | `output.topFilesLength`          | Jumlah file teratas untuk ditampilkan dalam ringkasan. Jika diset ke 0, tidak akan ada ringkasan yang ditampilkan         | `5`                    |
 | `output.includeEmptyDirectories` | Apakah akan menyertakan direktori kosong dalam struktur repository                                                          | `false`                |
 | `output.includeFullDirectoryStructure` | Saat menggunakan pola `include`, apakah akan menampilkan pohon direktori lengkap (sesuai dengan pola ignore) sambil tetap hanya memproses file yang disertakan. Menyediakan konteks repository lengkap untuk analisis AI | `false`                |
@@ -147,11 +156,15 @@ Berikut adalah contoh file konfigurasi lengkap (`repomix.config.json`):
 {
   "$schema": "https://repomix.com/schemas/latest/schema.json",
   "input": {
-    "maxFileSize": 50000000
+    "maxFileSize": 50000000,
+    // "processors": [
+    //   { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    // ]
   },
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
+    "filePathStyle": "target-relative",
     "parsableStyle": false,
     "compress": false,
     "headerText": "Informasi header kustom untuk file yang dikemas.",
@@ -162,6 +175,10 @@ Berikut adalah contoh file konfigurasi lengkap (`repomix.config.json`):
     "removeEmptyLines": false,
     "topFilesLength": 5,
     "showLineNumbers": false,
+    // "patterns": [
+    //   { "pattern": "docs/**/*", "compress": true },
+    //   { "pattern": "website/**/*", "directoryStructureOnly": true }
+    // ],
     "truncateBase64": false,
     "copyToClipboard": false,
     "includeEmptyDirectories": false,
@@ -269,6 +286,93 @@ Manfaat utama:
 - Menghapus body fungsi dan detail implementasi
 
 Untuk detail dan contoh lebih lanjut, lihat [Panduan Kompresi Kode](code-compress).
+
+### Level Penyertaan Per-file
+
+Sementara `output.compress` menerapkan satu level tunggal ke setiap file, `output.patterns` memungkinkan Anda mengontrol level detail **per glob** dari file konfigurasi Anda. Setiap entri menargetkan file berdasarkan glob (dicocokkan dengan cara yang sama seperti `include`/`ignore`) dan menimpa pengaturan `output.compress` global untuk file yang cocok.
+
+```json5
+{
+  "output": {
+    "compress": false, // default global bertindak sebagai catch-all
+    "patterns": [
+      { "pattern": "docs/**/*", "compress": true },
+      { "pattern": "website/**/*", "directoryStructureOnly": true }
+    ]
+  }
+}
+```
+
+Setiap file diselesaikan menjadi salah satu dari tiga level:
+
+- **Konten penuh** (default): konten penuh file disertakan.
+- **Terkompresi** (`compress: true`): konten dilewatkan melalui pipeline Tree-sitter yang sama seperti `output.compress`.
+- **Hanya struktur direktori** (`directoryStructureOnly: true`): file dicantumkan dalam struktur direktori, tetapi blok kontennya dihilangkan sepenuhnya dari output.
+
+Aturannya:
+
+- Pola dievaluasi sesuai urutan array dan **pola pertama yang cocok yang menang** untuk file tertentu.
+- Flag dari pola yang cocok menimpa pengaturan `output.compress` global. Pola yang cocok tanpa menetapkan flag akan memaksa **konten penuh** untuk file tersebut, yang berguna untuk memasukkan file ke whitelist dari `compress` global.
+- `directoryStructureOnly` lebih diutamakan daripada `compress` ketika keduanya diatur pada pola yang sama.
+- Jika tidak ada pola yang cocok, perilaku global berlaku (konten penuh, atau terkompresi ketika `output.compress` bernilai `true`).
+
+Opsi ini hanya tersedia di file konfigurasi; tidak ada opsi CLI yang setara.
+
+### Prosesor File
+
+`input.processors` menjalankan perintah eksternal untuk mentransformasi konten file **sebelum** dikemas. Setiap entri menargetkan file berdasarkan glob (dicocokkan dengan cara yang sama seperti `include`/`ignore`) dan mengganti konten file yang cocok dengan output standar dari perintah tersebut. Ini berguna untuk transformasi yang mengurangi token atau mengonversi format, misalnya mengonversi JSON ke [TOON](https://github.com/toon-format/toon), meminifikasi SVG, atau mengonversi notebook menjadi skrip biasa.
+
+```json5
+{
+  "input": {
+    "processors": [
+      {
+        "pattern": "**/*.json",
+        "command": "npx @toon-format/cli {file}"
+      }
+    ]
+  }
+}
+```
+
+Cara kerjanya:
+
+- Repomix menulis konten setiap file yang cocok ke file sementara dan mengganti placeholder `{file}` dalam perintah dengan path file tersebut (placeholder ini **wajib** ada).
+- Perintah dijalankan melalui shell, sehingga pipe dan alat seperti `npx` dapat digunakan. Output standarnya menjadi konten baru file tersebut, yang kemudian mengalir melalui sisa pipeline (pemeriksaan keamanan, penghitungan token, dan pembuatan output) seperti file lainnya.
+- Pola dievaluasi sesuai urutan array dan **pola pertama yang cocok yang menang** — sebuah file ditransformasi oleh paling banyak satu prosesor (tanpa chaining).
+
+Opsi per-prosesor:
+
+- `timeout`: Waktu maksimum dalam milidetik untuk menunggu perintah. Default: `60000` (60 detik). Perhatikan bahwa `npx` mungkin memerlukan waktu tambahan untuk mengunduh paket pada cache dingin.
+- `onError`: Tindakan yang dilakukan ketika perintah keluar dengan status bukan nol atau timeout. `"fail"` (default) membatalkan seluruh proses pack; `"skip"` mencatat peringatan dan menggunakan konten asli file sebagai fallback.
+
+Contoh perintah (masing-masing adalah nilai `command` yang dipasangkan dengan `pattern` yang sesuai):
+
+| Pola | `command` | Fungsinya |
+| --- | --- | --- |
+| `**/*.json` | `jq -c . {file}` | Memadatkan JSON dengan menghapus spasi kosong |
+| `**/*.json` | `npx @toon-format/cli {file}` | Mengonversi JSON ke [TOON](https://github.com/toon-format/toon), format ringkas yang hemat token |
+| `**/*.svg` | `npx svgo -i {file} -o -` | Meminimalkan SVG |
+| `**/*.ipynb` | `jupyter nbconvert --to script --stdout {file}` | Mengonversi notebook Jupyter menjadi skrip Python biasa |
+
+Karena pola pertama yang cocok yang menang, terapkan hanya satu prosesor per file — misalnya pilih salah satu antara `jq` atau konverter TOON untuk `**/*.json`. Perintah harus menulis konten yang telah ditransformasi ke output standar, dan alat yang dipanggilnya harus tersedia di `PATH` Anda (perintah berbasis `npx` mengunduh alat saat pertama kali digunakan).
+
+::: warning Keamanan
+Prosesor file menjalankan **perintah arbitrer** dari file konfigurasi Anda, sehingga mengikuti model kepercayaan yang ketat:
+
+- Hanya berjalan **untuk proses CLI lokal**, di mana Repomix menganggap konfigurasi di direktori kerja Anda adalah milik Anda sendiri — batas kepercayaan yang sama seperti npm script atau Makefile. Begitu pula, jika Anda menjalankan `repomix` di dalam repositori yang diperoleh dari orang lain **tanpa memeriksa `repomix.config.json`-nya terlebih dahulu**, perintah prosesornya akan dieksekusi di mesin Anda. Periksa konfigurasi repositori yang tidak tepercaya sebelum melakukan pack.
+- **Dinonaktifkan** untuk library API (`pack()` / `runCli()`), MCP server, dan [repomix.com](https://repomix.com) yang di-hosting, sehingga tidak satu pun dari ketiganya dapat menjalankan perintah dari konfigurasi.
+- Untuk repositori remote (`--remote`), konfigurasi dari repositori yang di-clone — dan karenanya prosesornya — hanya dipercaya ketika Anda secara eksplisit meneruskan `--remote-trust-config`. Tanpa itu, konfigurasi remote bahkan tidak dimuat.
+
+Prosesor yang aktif dicatat saat startup sehingga prosesor tak terduga dari konfigurasi yang tidak dikenal dapat terlihat. Karena perintah dicetak saat startup dan dalam pesan error, referensikan kredensial melalui environment variable (mis. `$TOKEN`), yang dicatat tanpa diekspansi, alih-alih menuliskannya langsung di dalam perintah.
+:::
+
+Catatan:
+
+- Menggabungkan prosesor **yang mengubah format** dengan `output.compress`, `output.removeComments`, atau `compress` dari `output.patterns` pada file yang sama tidak disarankan: langkah-langkah tersebut dipilih berdasarkan ekstensi asli file, sehingga akan menjalankan penangan bahasa yang salah pada konten yang telah ditransformasi. Untuk alasan yang sama, output Markdown memberi label pada code fence berdasarkan ekstensi asli (mis. file JSON→TOON diberi fence sebagai `json`). Kompresi bersifat best-effort dan akan secara diam-diam fallback ke konten yang ditransformasi jika parsing gagal.
+- Dengan `--watch`, file yang cocok akan diproses ulang pada setiap rebuild, yang menjalankan ulang perintah setiap kali.
+- Saat timeout, Repomix menghentikan shell dari perintah tersebut; perintah yang memunculkan proses latar belakang (background process) miliknya sendiri yang berjalan lama dapat membiarkannya tetap berjalan.
+- Prosesor hanya melihat file teks (file biner dikecualikan sebelum pemrosesan), dan outputnya dibaca sebagai UTF-8.
 
 ### Integrasi Git
 

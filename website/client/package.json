@@ -6,22 +6,23 @@
     "docs:dev": "vitepress dev",
     "docs:build": "vitepress build",
     "docs:preview": "vitepress preview",
-    "lint": "npm run lint-tsc",
-    "lint-tsc": "tsgo --noEmit"
+    "lint": "node --run lint-tsc",
+    "lint-tsc": "tsc --noEmit"
   },
   "dependencies": {
-    "fflate": "^0.8.2",
-    "isbot": "^5.1.37",
-    "lucide-vue-next": "^0.577.0",
+    "fflate": "^0.8.3",
+    "isbot": "^5.2.2",
+    "lucide-vue-next": "^1.0.0",
     "vue3-ace-editor": "^2.2.4"
   },
   "devDependencies": {
     "@types/gtag.js": "^0.0.20",
-    "@types/node": "^24.12.2",
-    "@typescript/native-preview": "^7.0.0-dev.20260410.1",
-    "rollup-plugin-visualizer": "^7.0.1",
-    "vite-plugin-pwa": "^1.2.0",
+    "@types/node": "^26.6.6",
+    "rollup-plugin-visualizer": "^7.1.2",
+    "typescript": "^7.0.2",
+    "vite-plugin-pwa": "^2.0.0",
     "vitepress": "^1.6.4",
-    "vitepress-plugin-llms": "^1.12.0"
+    "vitepress-plugin-llms": "^1.14.0",
+    "wrangler": "^4.158.0"
   }
 }

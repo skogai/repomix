@@ -1,3 +1,8 @@
+---
+title: "Yapılandırma"
+description: "Repomix’i JSON, JSONC, JSON5, JavaScript veya TypeScript dosyalarıyla yapılandırın; çıktı formatları, include ve ignore desenleri ile gelişmiş seçenekleri ayarlayın."
+---
+
 # Yapılandırma
 
 Repomix, bir yapılandırma dosyası veya komut satırı seçenekleri kullanılarak yapılandırılabilir. Yapılandırma dosyası, Repomix'in kod tabanınızı işleme ve çıktı alma biçiminin çeşitli yönlerini özelleştirmenize olanak tanır.
@@ -86,10 +91,13 @@ JavaScript yapılandırma dosyaları, `defineConfig` ve dinamik değerleri deste
 | Seçenek                          | Açıklama                                                                                                                     | Varsayılan             |
 |----------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
 | `input.maxFileSize`              | İşlenecek maksimum dosya boyutu (bayt). Bu boyutu aşan dosyalar atlanır. Büyük ikili dosyaları veya veri dosyalarını hariç tutmak için kullanışlıdır | `50000000`            |
+| `input.processors`               | Paketlemeden **önce** eşleşen dosyaları dönüştürmek için harici bir komut çalıştıran `{ pattern, command, timeout?, onError? }` girdilerinden oluşan sıralı bir dizi (örn. JSON→TOON). Eşleşen ilk glob kazanır. Rastgele komutlar çalıştırdığından yalnızca yerel CLI çalıştırmalarında (ve `--remote-trust-config` ile uzak depolarda) çalışır. Bkz. [Dosya İşlemcileri](#dosya-islemcileri) | Ayarlanmamış            |
 | `output.filePath`                | Çıktı dosyasının adı. XML, Markdown ve düz metin formatlarını destekler                                                     | `"repomix-output.xml"` |
 | `output.style`                   | Çıktının stili (`xml`, `markdown`, `json`, `plain`). Her formatın farklı AI araçları için kendine özgü avantajları vardır   | `"xml"`                |
+| `output.filePathStyle`           | Çıktıda dosya yollarının gösterilme biçimi (`target-relative` yolları her hedef köke göre, `cwd-relative` ise geçerli çalışma dizinine göre göreceli tutar) | `"target-relative"`    |
 | `output.parsableStyle`           | Çıktının seçilen stil şemasına göre kaçış karakteriyle işlenip işlenmeyeceği. Daha iyi ayrıştırma sağlar ancak token sayısını artırabilir | `false`                |
 | `output.compress`                | Token sayısını azaltırken yapıyı korumak amacıyla Tree-sitter kullanarak akıllı kod çıkarma yapılıp yapılmayacağı            | `false`                |
+| `output.patterns`                | Dosya bazında dahil etme düzeyleri. `{ pattern, compress?, directoryStructureOnly? }` girdilerinden oluşan sıralı bir dizi; eşleşen ilk glob kazanır ve o dosya için global `output.compress` ayarını geçersiz kılar. Bkz. [Dosya Bazında Dahil Etme Düzeyleri](#dosya-bazında-dahil-etme-duzeyleri) | Ayarlanmamış           |
 | `output.headerText`              | Dosya başlığına dahil edilecek özel metin. AI araçları için bağlam veya talimat sağlamak için kullanışlıdır                  | `null`                 |
 | `output.instructionFilePath`     | AI işleme için ayrıntılı özel talimatlar içeren dosyanın yolu                                                               | `null`                 |
 | `output.fileSummary`             | Başlangıçta dosya sayıları, boyutları ve diğer metrikleri gösteren özet bölümünün dahil edilip edilmeyeceği                 | `true`                 |
@@ -101,6 +109,7 @@ JavaScript yapılandırma dosyaları, `defineConfig` ve dinamik değerleri deste
 | `output.truncateBase64`          | Token sayısını azaltmak için uzun base64 veri dizelerinin (örn. görseller) kırpılıp kırpılmayacağı                          | `false`                |
 | `output.copyToClipboard`         | Dosyayı kaydetmeye ek olarak çıktının sistem panosuna kopyalanıp kopyalanmayacağı                                           | `false`                |
 | `output.splitOutput`             | Çıktıyı parça başına maksimum boyuta göre numaralı birden fazla dosyaya böl (örn. yaklaşık 1MB için `1000000`). CLI, `500kb` veya `2mb` gibi insan tarafından okunabilir boyutları kabul eder. Her dosyayı sınırın altında tutar ve dosyaların parçalar arasında bölünmesini önler | Ayarlanmamış           |
+| `output.tokenBudget`             | Paketlenmiş çıktı bu kadar tokeni aştığında sıfır olmayan bir çıkış koduyla başarısız ol. CI/ajan bağlam sınırları için bir koruma görevi görür; çıktı yine de oluşturulur | Ayarlanmamış           |
 | `output.topFilesLength`          | Özette gösterilecek en iyi dosya sayısı. 0 olarak ayarlanırsa özet gösterilmez                                              | `5`                    |
 | `output.includeEmptyDirectories` | Depo yapısına boş dizinlerin dahil edilip edilmeyeceği                                                                      | `false`                |
 | `output.includeFullDirectoryStructure` | `include` kalıpları kullanılırken yalnızca dahil edilen dosyaları işlerken tam dizin ağacının (yoksayma kalıplarına uyarak) görüntülenip görüntülenmeyeceği. AI analizi için tam depo bağlamı sağlar | `false`                |
@@ -147,11 +156,15 @@ Eksiksiz bir yapılandırma dosyası örneği (`repomix.config.json`):
 {
   "$schema": "https://repomix.com/schemas/latest/schema.json",
   "input": {
-    "maxFileSize": 50000000
+    "maxFileSize": 50000000,
+    // "processors": [
+    //   { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    // ]
   },
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
+    "filePathStyle": "target-relative",
     "parsableStyle": false,
     "compress": false,
     "headerText": "Custom header information for the packed file.",
@@ -162,6 +175,10 @@ Eksiksiz bir yapılandırma dosyası örneği (`repomix.config.json`):
     "removeEmptyLines": false,
     "topFilesLength": 5,
     "showLineNumbers": false,
+    // "patterns": [
+    //   { "pattern": "docs/**/*", "compress": true },
+    //   { "pattern": "website/**/*", "directoryStructureOnly": true }
+    // ],
     "truncateBase64": false,
     "copyToClipboard": false,
     "includeEmptyDirectories": false,
@@ -321,6 +338,93 @@ Temel avantajlar:
 - Fonksiyon gövdelerini ve uygulama ayrıntılarını kaldırır
 
 Daha fazla ayrıntı ve örnek için [Kod Sıkıştırma Kılavuzu](code-compress) sayfasına bakın.
+
+### Dosya Bazında Dahil Etme Düzeyleri
+
+`output.compress` her dosyaya tek bir düzey uygularken, `output.patterns` ayrıntı düzeyini yapılandırma dosyanızdan **glob bazında** kontrol etmenizi sağlar. Her girdi, dosyaları glob ile hedefler (`include`/`ignore` ile aynı şekilde eşleştirilir) ve eşleşen dosyalar için global `output.compress` ayarını geçersiz kılar.
+
+```json5
+{
+  "output": {
+    "compress": false, // global varsayılan, yakalama amaçlı genel kural olarak işlev görür
+    "patterns": [
+      { "pattern": "docs/**/*", "compress": true },
+      { "pattern": "website/**/*", "directoryStructureOnly": true }
+    ]
+  }
+}
+```
+
+Her dosya üç düzeyden birine çözümlenir:
+
+- **Tam içerik** (varsayılan): dosyanın tam içeriği dahil edilir.
+- **Sıkıştırılmış** (`compress: true`): içerik, `output.compress` ile aynı Tree-sitter işlem hattından geçirilir.
+- **Yalnızca dizin yapısı** (`directoryStructureOnly: true`): dosya dizin yapısında listelenir, ancak içerik bloğu çıktıdan tamamen çıkarılır.
+
+Kurallar:
+
+- Kalıplar dizi sırasına göre değerlendirilir ve belirli bir dosya için **eşleşen ilk kalıp kazanır**.
+- Eşleşen bir kalıbın bayrakları, global `output.compress` ayarını geçersiz kılar. Herhangi bir bayrak ayarlamadan eşleşen bir kalıp, o dosya için **tam içeriği** zorunlu kılar; bu, global bir `compress` ayarından dosyaları beyaz listeye almak için kullanışlıdır.
+- Aynı kalıpta her ikisi de ayarlandığında `directoryStructureOnly`, `compress` ayarına göre önceliklidir.
+- Hiçbir kalıp eşleşmezse global davranış uygulanır (tam içerik veya `output.compress` `true` olduğunda sıkıştırılmış).
+
+Bu seçenek yalnızca yapılandırma dosyasına özgüdür; eşdeğer bir CLI bayrağı yoktur.
+
+### Dosya İşlemcileri
+
+`input.processors`, bir dosyanın içeriğini paketlenmeden **önce** dönüştürmek için harici bir komut çalıştırır. Her girdi, dosyaları glob ile hedefler (`include`/`ignore` ile aynı şekilde eşleştirilir) ve eşleşen dosyaların içeriğini komutun standart çıktısıyla değiştirir. Bu, token azaltan veya format dönüştüren dönüşümler için kullanışlıdır; örneğin JSON'u [TOON](https://github.com/toon-format/toon) formatına dönüştürmek, SVG'leri küçültmek veya notebook'ları düz betiklere dönüştürmek gibi.
+
+```json5
+{
+  "input": {
+    "processors": [
+      {
+        "pattern": "**/*.json",
+        "command": "npx @toon-format/cli {file}"
+      }
+    ]
+  }
+}
+```
+
+Nasıl çalışır:
+
+- Repomix, eşleşen her dosyanın içeriğini geçici bir dosyaya yazar ve komuttaki `{file}` yer tutucusunu bu dosyanın yoluyla değiştirir (yer tutucu **zorunludur**).
+- Komut shell üzerinden çalıştırılır, bu nedenle pipe'lar ve `npx` gibi araçlar çalışır. Standart çıktısı dosyanın yeni içeriği olur ve bu içerik, diğer tüm dosyalar gibi işlem hattının geri kalanından (güvenlik kontrolü, token sayımı ve çıktı oluşturma) geçer.
+- Kalıplar dizi sırasına göre değerlendirilir ve **eşleşen ilk kalıp kazanır** — bir dosya en fazla bir işlemci tarafından dönüştürülür (zincirleme yoktur).
+
+İşlemci başına seçenekler:
+
+- `timeout`: Komutun tamamlanmasını beklemek için milisaniye cinsinden maksimum süre. Varsayılan: `60000` (60sn). `npx`'in soğuk önbellekte bir paketi indirmek için ekstra süreye ihtiyaç duyabileceğini unutmayın.
+- `onError`: Komut sıfır olmayan bir durumla sonuçlandığında veya zaman aşımına uğradığında ne yapılacağı. `"fail"` (varsayılan) tüm paketlemeyi iptal eder; `"skip"` bir uyarı kaydeder ve dosyanın özgün içeriğine geri döner.
+
+Örnek komutlar (her biri uygun bir `pattern` ile eşleştirilmiş bir `command` değeridir):
+
+| Desen | `command` | Ne yapar |
+| --- | --- | --- |
+| `**/*.json` | `jq -c . {file}` | Boşlukları kaldırarak JSON'u sıkıştırır |
+| `**/*.json` | `npx @toon-format/cli {file}` | JSON'u [TOON](https://github.com/toon-format/toon) adlı kompakt ve token açısından verimli bir biçime dönüştürür |
+| `**/*.svg` | `npx svgo -i {file} -o -` | SVG'yi küçültür |
+| `**/*.ipynb` | `jupyter nbconvert --to script --stdout {file}` | Bir Jupyter not defterini düz bir Python betiğine dönüştürür |
+
+İlk eşleşen desen kazandığından, dosya başına yalnızca bir işlemci uygulayın — örneğin `**/*.json` için `jq` veya TOON dönüştürücüsünden birini seçin. Komut, dönüştürülmüş içeriği standart çıktıya yazmalıdır ve çağırdığı aracın `PATH`inizde mevcut olması gerekir (`npx` tabanlı komutlar aracı ilk kullanımda indirir).
+
+::: warning Güvenlik
+Dosya işlemcileri, yapılandırma dosyanızdan **rastgele komutlar** çalıştırır, bu nedenle katı bir güven modeline uyarlar:
+
+- **Yalnızca yerel CLI çalıştırmalarında** çalışırlar; burada Repomix, çalışma dizininizdeki yapılandırmanın size ait olduğunu varsayar — bu, bir npm betiği veya bir Makefile ile aynı güven sınırıdır. Benzer şekilde, başka birinden aldığınız bir depo içinde `repomix` çalıştırırsanız ve **önce `repomix.config.json` dosyasını incelemezseniz**, o deponun işlemci komutları makinenizde çalışır. Güvenilmeyen depoları paketlemeden önce yapılandırmalarını inceleyin.
+- Kütüphane API'si (`pack()` / `runCli()`), MCP sunucusu ve barındırılan [repomix.com](https://repomix.com) için **devre dışıdır**, dolayısıyla bunların hiçbiri bir yapılandırmadan komut çalıştıramaz.
+- Uzak depolar için (`--remote`), klonlanan deponun yapılandırması — ve dolayısıyla işlemcileri — yalnızca `--remote-trust-config` seçeneğini açıkça geçtiğinizde güvenilir kabul edilir. Bu olmadan, uzak yapılandırma yüklenmez bile.
+
+Etkin işlemciler başlangıçta günlüğe kaydedilir, böylece tanıdık olmayan bir yapılandırmadan gelen beklenmedik işlemciler görünür olur. Komut, başlangıçta ve hata mesajlarında yazdırıldığından, kimlik bilgilerini doğrudan komutun içine gömmek yerine, günlükte açılmadan kaydedilen ortam değişkenleri (ör. `$TOKEN`) aracılığıyla referans verin.
+:::
+
+Notlar:
+
+- **Biçimi değiştiren** bir işlemciyi aynı dosyada `output.compress`, `output.removeComments` veya bir `output.patterns` `compress` ile birleştirmek önerilmez: bu adımlar dosyanın özgün uzantısına göre seçilir, bu nedenle dönüştürülmüş içerik üzerinde yanlış dil işleyicisini çalıştırırlar. Aynı nedenle, Markdown çıktısı kod bloğunu özgün uzantıya göre etiketler (ör. JSON→TOON dosyası `json` olarak etiketlenir). Sıkıştırma en iyi çaba (best-effort) esasına dayanır ve bir ayrıştırma hatasında sessizce dönüştürülen içeriğe geri döner.
+- `--watch` ile, eşleşen dosyalar her yeniden derlemede yeniden işlenir; bu da komutu her seferinde yeniden çalıştırır.
+- Zaman aşımında Repomix, komutun shell'ini sonlandırır; kendi uzun ömürlü arka plan işlemlerini başlatan bir komut, bunları çalışır durumda bırakabilir.
+- İşlemciler yalnızca metin dosyalarını görür (ikili dosyalar işlemeden önce hariç tutulur) ve çıktıları UTF-8 olarak okunur.
 
 ### Git Entegrasyonu
 

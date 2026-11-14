@@ -1,3 +1,8 @@
+---
+title: "Serveur MCP"
+description: "Exécutez Repomix comme serveur Model Context Protocol afin que les assistants IA puissent empaqueter, rechercher et lire directement des bases de code locales ou distantes."
+---
+
 # Serveur MCP
 
 Repomix prend en charge le [Model Context Protocol (MCP)](https://modelcontextprotocol.io), permettant aux assistants IA d'interagir directement avec votre base de code. Lorsqu'il est exécuté en tant que serveur MCP, Repomix fournit des outils permettant aux assistants IA de packager des dépôts locaux ou distants pour analyse sans nécessiter de préparation manuelle des fichiers.
@@ -13,6 +18,30 @@ repomix --mcp
 ```
 
 Cela démarre Repomix en mode serveur MCP, le rendant disponible pour les assistants IA qui prennent en charge le Model Context Protocol.
+
+## Mode bac à sable
+
+Par défaut, le serveur MCP peut lire n'importe quel chemin accessible à l'utilisateur hôte. C'est pratique pour un assistant local de confiance, mais trop permissif lorsque le serveur est exposé à un client ou un agent non fiable. L'option `--sandbox` confine les outils de fichiers du serveur à un unique répertoire de travail:
+
+```bash
+# Confiner au répertoire de travail courant
+repomix --mcp --sandbox
+
+# Confiner à un répertoire spécifique
+repomix --mcp --sandbox path/to/project
+```
+
+Lorsque le mode bac à sable est activé:
+
+- **Chaque chemin est relatif à la racine du répertoire de travail.** Les chemins absolus, `~`, `..` et les chemins de lecteur/UNC Windows sont refusés, et les chemins qui se résolvent en dehors de la racine (y compris via des liens symboliques) sont rejetés. Les résultats et les messages d'erreur sont eux aussi relatifs, de sorte que les chemins de l'hôte ne sont jamais exposés. Cela s'applique aux arguments `directory` et `path` de la référence des outils ci-dessous : en mode bac à sable, indiquez-les relatifs à la racine du répertoire de travail, et non comme les chemins absolus que ces tableaux décrivent par ailleurs.
+- **Seuls les outils en lecture seule et confinés à la racine sont enregistrés:** `pack_codebase`, `read_repomix_output`, `grep_repomix_output`, `file_system_read_file` et `file_system_read_directory`. L'empaquetage de dépôts distants, la génération de skills et l'attachement de sorties externes sont désactivés, car ils accèdent au réseau, écrivent des fichiers ou référencent des chemins arbitraires. Les deux outils `file_system_*` eux-mêmes ne sont disponibles qu'en mode bac à sable, où la racine du répertoire de travail délimite ce qu'ils peuvent atteindre.
+- **Les fichiers de configuration ne sont pas chargés.** `pack_codebase` ignore à la fois le `repomix.config.*` du répertoire empaqueté et votre configuration globale.
+
+Sans `--sandbox`, `pack_codebase` charge le `repomix.config.*` du répertoire qu'il empaquette et lui fait confiance, comme si vous exécutiez `repomix` à cet endroit en ligne de commande. Un fichier de configuration est du code: il peut s'exécuter au chargement et lire des fichiers en dehors du dépôt (voir [Sécurité](/fr/guide/security#pourquoi-un-fichier-de-configuration-est-du-code)). Si votre assistant peut empaqueter des répertoires auxquels vous ne faites pas confiance, comme des dépôts tiers clonés, utilisez `--sandbox`.
+
+Il s'agit d'un confinement de la surface d'outils au niveau applicatif (défense en profondeur), et non d'un bac à sable au niveau du système d'exploitation. Lorsque vous hébergez le serveur pour des clients non fiables, exécutez-le tout de même sous l'isolation habituelle de votre plateforme (conteneurs, utilisateurs dédiés).
+
+`--sandbox` n'affecte que le serveur MCP; il n'a aucun effet sans `--mcp`.
 
 ## Configuration des serveurs MCP
 
@@ -111,6 +140,7 @@ Cet outil package un répertoire de code local dans un fichier XML pour l'analys
 | `compress` | Non | `false` | Active la compression Tree-sitter pour extraire les signatures de code essentielles et la structure tout en supprimant les détails d'implémentation. Réduit l'utilisation de tokens d'environ 70% tout en préservant la signification sémantique. Généralement non nécessaire car `grep_repomix_output` permet la récupération incrémentale de contenu. |
 | `includePatterns` | Non | — | Fichiers à inclure avec des motifs fast-glob. Séparés par des virgules (ex : `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Non | — | Fichiers supplémentaires à exclure avec des motifs fast-glob. Séparés par des virgules (ex : `"test/**,*.spec.js"`). Complète `.gitignore` et les exclusions intégrées. |
+| `outputPatterns` | Non | — | Niveaux d'inclusion par fichier, reflétant l'option du fichier de configuration [`output.patterns`](./configuration.md). Un tableau d'entrées `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`. Le premier motif correspondant l'emporte ; `directoryStructureOnly` a priorité sur `compress`, et une correspondance sans aucun des deux indicateurs force le contenu complet (utile pour exempter des fichiers d'un `compress` global). Remplace tout `output.patterns` du `repomix.config.json` du dépôt cible. |
 | `topFilesLength` | Non | `10` | Nombre de plus gros fichiers par taille à afficher dans le résumé des métriques |
 | `style` | Non | `xml` | Style de format de sortie : `xml`, `markdown`, `json` ou `plain` |
 
@@ -118,12 +148,18 @@ Cet outil package un répertoire de code local dans un fichier XML pour l'analys
 ```json
 {
   "directory": "/path/to/your/project",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
+
+Avec l'exemple ci-dessus (où `compress: true` sert de cas par défaut pour les fichiers non correspondants), les fichiers sous `src/core/` conservent leur contenu complet, les fichiers sous `docs/` sont listés uniquement dans la structure de répertoires, et tout le reste est compressé.
 
 ### pack_remote_repository
 
@@ -137,6 +173,7 @@ Cet outil récupère, clone et package un dépôt GitHub dans un fichier XML pou
 | `compress` | Non | `false` | Active la compression Tree-sitter pour extraire les signatures de code essentielles et la structure tout en supprimant les détails d'implémentation. Réduit l'utilisation de tokens d'environ 70% tout en préservant la signification sémantique. Généralement non nécessaire car `grep_repomix_output` permet la récupération incrémentale de contenu. |
 | `includePatterns` | Non | — | Fichiers à inclure avec des motifs fast-glob. Séparés par des virgules (ex : `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Non | — | Fichiers supplémentaires à exclure avec des motifs fast-glob. Séparés par des virgules (ex : `"test/**,*.spec.js"`). Complète `.gitignore` et les exclusions intégrées. |
+| `outputPatterns` | Non | — | Niveaux d'inclusion par fichier, reflétant l'option du fichier de configuration [`output.patterns`](./configuration.md). Un tableau d'entrées `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`. Le premier motif correspondant l'emporte ; `directoryStructureOnly` a priorité sur `compress`, et une correspondance sans aucun des deux indicateurs force le contenu complet (utile pour exempter des fichiers d'un `compress` global). |
 | `topFilesLength` | Non | `10` | Nombre de plus gros fichiers par taille à afficher dans le résumé des métriques |
 | `style` | Non | `xml` | Style de format de sortie : `xml`, `markdown`, `json` ou `plain` |
 
@@ -144,9 +181,13 @@ Cet outil récupère, clone et package un dépôt GitHub dans un fichier XML pou
 ```json
 {
   "remote": "yamadashy/repomix",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
@@ -166,7 +207,7 @@ Cet outil lit le contenu d'un fichier de sortie généré par Repomix. Il prend 
 **Fonctionnalités :**
 - Conçu spécifiquement pour les environnements basés sur le web ou les applications en bac à sable
 - Récupère le contenu des sorties générées précédemment en utilisant leur ID
-- Fournit un accès sécurisé à la base de code packagée sans nécessiter d'accès au système de fichiers
+- Fournit un accès à la base de code packagée sans nécessiter d'accès au système de fichiers
 - Prend en charge la lecture partielle pour les gros fichiers
 
 **Exemple:**
@@ -211,48 +252,35 @@ Cet outil recherche des motifs dans un fichier de sortie Repomix en utilisant un
 
 ### file_system_read_file et file_system_read_directory
 
-Le serveur MCP de Repomix fournit deux outils système de fichiers qui permettent aux assistants IA d'interagir en toute sécurité avec le système de fichiers local:
+Ces deux outils système de fichiers ne sont disponibles qu'en [mode bac à sable](#mode-bac-à-sable) (`--sandbox`), où la racine du répertoire de travail délimite ce qu'ils peuvent atteindre. Sans `--sandbox`, ils ne sont pas enregistrés.
 
 1. `file_system_read_file`
-  - Lit le contenu des fichiers du système de fichiers local en utilisant des chemins absolus
-  - Inclut une validation de sécurité intégrée pour détecter et prévenir l'accès aux fichiers contenant des informations sensibles
-  - Implémente la validation de sécurité avec [Secretlint](https://github.com/secretlint/secretlint)
-  - Empêche l'accès aux fichiers contenant des informations sensibles (clés API, mots de passe, secrets)
-  - Valide les chemins absolus pour prévenir les attaques par traversée de répertoire
-  - Renvoie des messages d'erreur clairs pour les chemins invalides et les problèmes de sécurité
+  - Lit le contenu d'un fichier à un chemin relatif à la racine du répertoire de travail (par ex. `src/index.ts`)
+  - Refuse le contenu correspondant à des formats de secrets connus ([Secretlint](https://github.com/secretlint/secretlint)) comme garde-fou heuristique supplémentaire; la limite d'accès est la racine du répertoire de travail, pas l'analyse
+  - Renvoie des messages d'erreur clairs pour les chemins invalides, sans exposer les chemins de l'hôte
 
 2. `file_system_read_directory`
-  - Liste le contenu d'un répertoire en utilisant un chemin absolu
-  - Renvoie une liste formatée montrant les fichiers et sous-répertoires avec des indicateurs clairs
+  - Liste le contenu d'un répertoire à un chemin relatif à la racine du répertoire de travail (par ex. `.` ou `src`)
   - Affiche les fichiers et répertoires avec des indicateurs clairs (`[FILE]` ou `[DIR]`)
-  - Fournit une traversée sécurisée des répertoires avec une gestion appropriée des erreurs
-  - Valide les chemins et s'assure qu'ils sont absolus
   - Utile pour explorer la structure du projet et comprendre l'organisation de la base de code
-
-Les deux outils intègrent des mesures de sécurité robustes:
-- Validation des chemins absolus pour prévenir les attaques par traversée de répertoire
-- Vérifications des permissions pour assurer des droits d'accès appropriés
-- Intégration avec Secretlint pour la détection d'informations sensibles
-- Messages d'erreur clairs pour un meilleur débogage et une meilleure sensibilisation à la sécurité
 
 **Exemple:**
 ```typescript
 // Lecture d'un fichier
 const fileContent = await tools.file_system_read_file({
-  path: '/absolute/path/to/file.txt'
+  path: 'src/index.ts'
 });
 
 // Liste du contenu d'un répertoire
 const dirContent = await tools.file_system_read_directory({
-  path: '/absolute/path/to/directory'
+  path: 'src'
 });
 ```
 
 Ces outils sont particulièrement utiles lorsque les assistants IA doivent:
-- Analyser des fichiers spécifiques dans la base de code
+- Analyser des fichiers spécifiques dans le répertoire de travail
 - Naviguer dans les structures de répertoires
 - Vérifier l'existence et l'accessibilité des fichiers
-- Assurer des opérations sécurisées sur le système de fichiers
 
 ## Avantages de l'utilisation de Repomix comme serveur MCP
 

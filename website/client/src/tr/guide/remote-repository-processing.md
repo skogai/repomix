@@ -1,3 +1,8 @@
+---
+title: "GitHub Deposu İşleme"
+description: "Repomix ile GitHub depolarını tam URL, kullanıcı/depo kısaltması, dallar, etiketler, commit’ler, Docker ve uzak yapılandırma güven kontrolleriyle paketleyin."
+---
+
 # GitHub Deposu İşleme
 
 ## Temel Kullanım
@@ -10,6 +15,14 @@ repomix --remote https://github.com/user/repo
 # GitHub kısayol formatıyla
 repomix --remote user/repo
 ```
+
+`owner/repo` kısayolunu `--remote` olmadan doğrudan da geçebilirsiniz:
+
+```bash
+repomix yamadashy/repomix
+```
+
+`owner/repo` aynı zamanda göreli bir yerel yola da benzediğinden, Repomix bunu yalnızca o adda yerel bir dosya veya dizin yoksa ve depo GitHub üzerinde erişilebilirse uzak depo olarak değerlendirir. Mevcut bir yerel yol her zaman önceliklidir; `owner/repo` biçimindeki bir yolu yerel olarak işlemeye zorlamak için başına `./` ekleyin (örneğin, `repomix ./owner/repo`). Argüman desenle eşleşse de depoya erişilemiyorsa (örneğin özel bir depo veya bir yazım hatası), Repomix bunu yerel yol olarak işlemeye geri döner.
 
 ## Dal ve Commit Seçimi
 
@@ -70,6 +83,22 @@ repomix --remote user/repo --remote-trust-config
 # Ortam değişkeni kullanarak
 REPOMIX_REMOTE_TRUST_CONFIG=true repomix --remote user/repo
 ```
+
+::: warning
+`--remote-trust-config`, uzak deponun yapılandırmasına kendi makinenizle aynı düzeyde güven tanır. Güvenilen bir yapılandırma (`input.processors` aracılığıyla) **rastgele komutlar çalıştırabilir** ve (örneğin `output.instructionFilePath` veya `../` kullanan include kalıpları aracılığıyla) **depo dışındaki yerel dosyaları okuyabilir**. Bu seçeneği yalnızca tamamen güvendiğiniz ve incelediğiniz depolar için kullanın; tanımadığınız bir kaynaktan `npm install` veya `Makefile` çalıştırmadan önce göstereceğiniz özenin aynısını gösterin.
+:::
+
+### Onay istemi
+
+Etkileşimli bir terminalde bir deponun yapılandırmasına güvendiğinizde, repomix çalıştırılmak üzere olan yapılandırmayı gösterir ve yüklemeden önce onaylamanızı ister:
+
+- **Evet, yalnızca bu sefer**: yalnızca bu çalıştırmaya güvenilir.
+- **Evet, bu depo için tekrar sorma**: geçici dosyalarınız temizlenene kadar ve yalnızca o yapılandırma dosyası değişmediği sürece hatırlanır (yapılandırma dosyası düzenlenirse tekrar sorulur). Bu kontrolün yalnızca yapılandırma dosyasının kendisini kapsadığını unutmayın: bir `.ts` / `.js` yapılandırması başka dosyaları içe aktarabilir ve bunlar bu kontrolün parçası değildir.
+- **Hayır**: yapılandırmayı çalıştırmadan iptal et.
+
+`--force` bayrağını geçtiğinizde, CI gibi etkileşimli olmayan kabuklarda (yapılandırma öncekiyle aynı şekilde güvenilir kabul edilir, böylece mevcut otomasyonlar çalışmaya devam eder) veya o depoya her zaman güvenmeyi zaten seçtiyseniz, bu istem atlanır.
+
+Tam güven modeli için — güvenilen bir yapılandırmanın neler yapabileceği, gösterilen yapılandırmanın kurcalanmaya karşı nasıl korunduğu ve "tekrar sorma" kararının nerede saklandığı dahil — bkz. [Güvenlik](/tr/guide/security#remote-repository-config-trust).
 
 `--remote` ile `--config` kullanırken mutlak bir yol belirtilmelidir:
 

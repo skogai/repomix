@@ -1,29 +1,19 @@
 import type { Stats } from 'node:fs';
-import fs from 'node:fs/promises';
+import type fs from 'node:fs/promises';
 import path from 'node:path';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { registerAttachPackedOutputTool } from '../../../src/mcp/tools/attachPackedOutputTool.js';
-import { buildMcpToolErrorResponse, formatPackToolResponse } from '../../../src/mcp/tools/mcpToolRuntime.js';
-
-vi.mock('node:fs/promises');
-vi.mock('node:path');
-vi.mock('../../../src/mcp/tools/mcpToolRuntime.js', async () => {
-  const actual = await vi.importActual('../../../src/mcp/tools/mcpToolRuntime.js');
-  return {
-    ...actual,
-    formatPackToolResponse: vi.fn(),
-    buildMcpToolErrorResponse: vi.fn(),
-  };
-});
+import { type MockedDeps, mockOverloaded } from '../../testing/depsDoubles.js';
+import { createMcpServerDouble, type McpServerDouble } from '../../testing/mcpServerDoubles.js';
 
 describe('AttachPackedOutputTool', () => {
-  const mockServer = {
-    registerTool: vi.fn().mockReturnThis(),
-  } as unknown as McpServer;
+  let mockServer: McpServerDouble;
 
   let toolHandler: (args: { path: string; topFilesLength?: number }) => Promise<CallToolResult>;
+  let deps: MockedDeps<NonNullable<Parameters<typeof registerAttachPackedOutputTool>[1]>>;
+  const errorMessageOf = (result: CallToolResult): string =>
+    JSON.parse((result.content[0] as { type: 'text'; text: string }).text).errorMessage;
 
   const mockXmlContent = `
     <repomix>
@@ -34,33 +24,19 @@ describe('AttachPackedOutputTool', () => {
   `;
 
   beforeEach(() => {
-    vi.resetAllMocks();
-    registerAttachPackedOutputTool(mockServer);
-    toolHandler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
-
-    // Mock path functions
-    vi.mocked(path.join).mockImplementation((...args) => args.join('/'));
-    vi.mocked(path.basename).mockImplementation((p) => p.split('/').pop() || '');
-    vi.mocked(path.dirname).mockImplementation((p) => p.split('/').slice(0, -1).join('/') || '.');
-    vi.mocked(path.extname).mockImplementation((p) => {
-      const parts = p.split('.');
-      return parts.length > 1 ? `.${parts[parts.length - 1]}` : '';
-    });
-
-    // Mock fs functions
-    vi.mocked(fs.stat).mockResolvedValue({
-      isDirectory: () => false,
-    } as unknown as Stats);
-    vi.mocked(fs.readFile).mockResolvedValue(mockXmlContent);
-
-    // Mock mcpToolRuntime functions
-    vi.mocked(formatPackToolResponse).mockResolvedValue({
-      content: [{ type: 'text', text: 'Success response' }],
-    });
-    vi.mocked(buildMcpToolErrorResponse).mockReturnValue({
-      isError: true,
-      content: [{ type: 'text', text: '{"errorMessage":"Error occurred"}' }],
-    });
+    deps = {
+      stat: mockOverloaded<typeof fs.stat>(),
+      access: vi.fn(),
+      readFile: mockOverloaded<typeof fs.readFile>(),
+      formatPackToolResponse: vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Success response' }],
+      }),
+    };
+    deps.stat.mockResolvedValue({ isDirectory: () => false } as Stats);
+    deps.readFile.mockResolvedValue(mockXmlContent);
+    mockServer = createMcpServerDouble();
+    registerAttachPackedOutputTool(mockServer.server, deps);
+    toolHandler = mockServer.toolHandler();
   });
 
   test('should register tool with correct parameters', () => {
@@ -76,9 +52,9 @@ describe('AttachPackedOutputTool', () => {
 
     const result = await toolHandler({ path: testFilePath });
 
-    expect(fs.stat).toHaveBeenCalledWith(testFilePath);
-    expect(fs.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
-    expect(formatPackToolResponse).toHaveBeenCalled();
+    expect(deps.stat).toHaveBeenCalledWith(testFilePath);
+    expect(deps.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
+    expect(deps.formatPackToolResponse).toHaveBeenCalled();
     const expectedFilePaths = ['src/index.js', 'src/utils.js', 'package.json'];
     const expectedCharCounts = {
       'src/index.js': "console.log('Hello');".length,
@@ -86,7 +62,7 @@ describe('AttachPackedOutputTool', () => {
       'package.json': '{"name":"test"}'.length,
     };
     const totalCharacters = Object.values(expectedCharCounts).reduce((a, b) => a + b, 0);
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 3,
@@ -97,6 +73,8 @@ describe('AttachPackedOutputTool', () => {
       }),
       testFilePath,
       undefined,
+      // Attached files are marked for serve-time secret scanning.
+      true,
     );
     expect(result).toEqual({
       content: [{ type: 'text', text: 'Success response' }],
@@ -105,24 +83,25 @@ describe('AttachPackedOutputTool', () => {
 
   test('should handle directory path input', async () => {
     const testDirPath = '/test/project';
-    const expectedXmlPath = '/test/project/repomix-output.xml';
+    const expectedXmlPath = path.join(testDirPath, 'repomix-output.xml');
 
-    vi.mocked(fs.stat).mockResolvedValue({
+    deps.stat.mockResolvedValue({
       isDirectory: () => true,
-    } as unknown as Stats);
-    vi.mocked(fs.access).mockResolvedValue(undefined);
+    } as Stats);
+    deps.access.mockResolvedValue(undefined);
 
     const result = await toolHandler({ path: testDirPath });
 
-    expect(fs.stat).toHaveBeenCalledWith(testDirPath);
-    expect(fs.access).toHaveBeenCalledWith(expectedXmlPath);
-    expect(fs.readFile).toHaveBeenCalledWith(expectedXmlPath, 'utf8');
-    expect(formatPackToolResponse).toHaveBeenCalled();
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.stat).toHaveBeenCalledWith(testDirPath);
+    expect(deps.access).toHaveBeenCalledWith(expectedXmlPath);
+    expect(deps.readFile).toHaveBeenCalledWith(expectedXmlPath, 'utf8');
+    expect(deps.formatPackToolResponse).toHaveBeenCalled();
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'project' },
       expect.anything(),
       expectedXmlPath,
       undefined,
+      true,
     );
     expect(result).toEqual({
       content: [{ type: 'text', text: 'Success response' }],
@@ -135,11 +114,12 @@ describe('AttachPackedOutputTool', () => {
 
     await toolHandler({ path: testFilePath, topFilesLength });
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       testFilePath,
       topFilesLength,
+      true,
     );
   });
 
@@ -149,29 +129,29 @@ describe('AttachPackedOutputTool', () => {
     const result = await toolHandler({ path: testFilePath });
 
     expect(result.isError).toBe(true);
-    expect(buildMcpToolErrorResponse).toHaveBeenCalled();
+    expect(errorMessageOf(result)).toContain('Unsupported file format: .xyz');
   });
 
   test('should handle file not found error', async () => {
     const testFilePath = '/test/non-existent.xml';
 
-    vi.mocked(fs.stat).mockRejectedValue(new Error('ENOENT: no such file or directory'));
+    deps.stat.mockRejectedValue(new Error('ENOENT: no such file or directory'));
 
     const result = await toolHandler({ path: testFilePath });
 
     expect(result.isError).toBe(true);
-    expect(buildMcpToolErrorResponse).toHaveBeenCalled();
+    expect(errorMessageOf(result)).toBe(`File or directory not found for path: ${testFilePath}`);
   });
 
   test('should handle read file error', async () => {
     const testFilePath = '/test/repomix-output.xml';
 
-    vi.mocked(fs.readFile).mockRejectedValue(new Error('Failed to read file'));
+    deps.readFile.mockRejectedValue(new Error('Failed to read file'));
 
     const result = await toolHandler({ path: testFilePath });
 
     expect(result.isError).toBe(true);
-    expect(buildMcpToolErrorResponse).toHaveBeenCalled();
+    expect(errorMessageOf(result)).toBe('Failed to read file');
   });
 
   test('should extract file paths correctly from XML content', async () => {
@@ -179,8 +159,8 @@ describe('AttachPackedOutputTool', () => {
 
     await toolHandler({ path: testFilePath });
 
-    const formatPackToolResponseCalls = vi.mocked(formatPackToolResponse).mock.calls;
-    expect(formatPackToolResponseCalls.length).toBeGreaterThan(0);
+    const formatPackToolResponseCalls = deps.formatPackToolResponse.mock.calls;
+    expect(formatPackToolResponseCalls).toHaveLength(1);
 
     // Check that the second argument (packResult) contains the expected file paths
     const packResult = formatPackToolResponseCalls[formatPackToolResponseCalls.length - 1][1];
@@ -188,29 +168,44 @@ describe('AttachPackedOutputTool', () => {
     expect(packResult.safeFilePaths).toEqual(['src/index.js', 'src/utils.js', 'package.json']);
   });
 
+  test('should mark attached outputs for serve-time secret scanning', async () => {
+    // The attach path does not scan or return content itself; instead it flags the
+    // registered output so read_repomix_output / grep_repomix_output secret-scan it
+    // before serving. The scan flags recognized secret formats; it does not restrict
+    // which file the path points at.
+    const testFilePath = '/test/repomix-output.xml';
+
+    await toolHandler({ path: testFilePath });
+
+    const calls = deps.formatPackToolResponse.mock.calls;
+    expect(calls).toHaveLength(1);
+    // The requiresSecretScan flag (5th argument) must be true.
+    expect(calls[calls.length - 1][4]).toBe(true);
+  });
+
   test('should handle directory without repomix-output.xml', async () => {
     const testDirPath = '/test/empty-project';
 
-    vi.mocked(fs.stat).mockResolvedValue({
+    deps.stat.mockResolvedValue({
       isDirectory: () => true,
-    } as unknown as Stats);
-    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT: no such file'));
+    } as Stats);
+    deps.access.mockRejectedValue(new Error('ENOENT: no such file'));
 
     const result = await toolHandler({ path: testDirPath });
 
     expect(result.isError).toBe(true);
-    expect(buildMcpToolErrorResponse).toHaveBeenCalled();
+    expect(errorMessageOf(result)).toContain(`No repomix output file found in directory: ${testDirPath}`);
   });
 
   test('should handle malformed XML by returning zero metrics', async () => {
     const testFilePath = '/test/repomix-output.xml';
     const malformedXml = '<repomix><file path="test.js">unclosed tag</repomix>';
 
-    vi.mocked(fs.readFile).mockResolvedValue(malformedXml);
+    deps.readFile.mockResolvedValue(malformedXml);
 
     await toolHandler({ path: testFilePath });
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 0,
@@ -221,6 +216,7 @@ describe('AttachPackedOutputTool', () => {
       }),
       testFilePath,
       undefined,
+      true,
     );
   });
 
@@ -240,13 +236,13 @@ function helper() {}
 \`\`\`
     `;
 
-    vi.mocked(fs.readFile).mockResolvedValue(markdownContent);
+    deps.readFile.mockResolvedValue(markdownContent);
 
     await toolHandler({ path: testFilePath });
 
-    expect(fs.stat).toHaveBeenCalledWith(testFilePath);
-    expect(fs.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
-    expect(formatPackToolResponse).toHaveBeenCalled();
+    expect(deps.stat).toHaveBeenCalledWith(testFilePath);
+    expect(deps.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
+    expect(deps.formatPackToolResponse).toHaveBeenCalled();
 
     const expectedFilePaths = ['src/index.js', 'src/utils.js'];
     const expectedCharCounts = {
@@ -255,7 +251,7 @@ function helper() {}
     };
     const totalCharacters = Object.values(expectedCharCounts).reduce((a, b) => a + b, 0);
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 2,
@@ -266,6 +262,7 @@ function helper() {}
       }),
       testFilePath,
       undefined,
+      true,
     );
   });
 
@@ -283,13 +280,13 @@ File: src/utils.js
 function helper() {}
     `;
 
-    vi.mocked(fs.readFile).mockResolvedValue(plainContent);
+    deps.readFile.mockResolvedValue(plainContent);
 
     await toolHandler({ path: testFilePath });
 
-    expect(fs.stat).toHaveBeenCalledWith(testFilePath);
-    expect(fs.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
-    expect(formatPackToolResponse).toHaveBeenCalled();
+    expect(deps.stat).toHaveBeenCalledWith(testFilePath);
+    expect(deps.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
+    expect(deps.formatPackToolResponse).toHaveBeenCalled();
 
     const expectedFilePaths = ['src/index.js', 'src/utils.js'];
     const expectedCharCounts = {
@@ -298,7 +295,7 @@ function helper() {}
     };
     const totalCharacters = Object.values(expectedCharCounts).reduce((a, b) => a + b, 0);
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 2,
@@ -309,6 +306,7 @@ function helper() {}
       }),
       testFilePath,
       undefined,
+      true,
     );
   });
 
@@ -322,13 +320,13 @@ function helper() {}
       },
     });
 
-    vi.mocked(fs.readFile).mockResolvedValue(jsonContent);
+    deps.readFile.mockResolvedValue(jsonContent);
 
     await toolHandler({ path: testFilePath });
 
-    expect(fs.stat).toHaveBeenCalledWith(testFilePath);
-    expect(fs.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
-    expect(formatPackToolResponse).toHaveBeenCalled();
+    expect(deps.stat).toHaveBeenCalledWith(testFilePath);
+    expect(deps.readFile).toHaveBeenCalledWith(testFilePath, 'utf8');
+    expect(deps.formatPackToolResponse).toHaveBeenCalled();
 
     const expectedFilePaths = ['src/index.js', 'src/utils.js', 'package.json'];
     const expectedCharCounts = {
@@ -338,7 +336,7 @@ function helper() {}
     };
     const totalCharacters = Object.values(expectedCharCounts).reduce((a, b) => a + b, 0);
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 3,
@@ -349,6 +347,7 @@ function helper() {}
       }),
       testFilePath,
       undefined,
+      true,
     );
   });
 
@@ -356,11 +355,11 @@ function helper() {}
     const testFilePath = '/test/repomix-output.json';
     const malformedJson = '{"files": {"test.js": "content"'; // missing closing braces
 
-    vi.mocked(fs.readFile).mockResolvedValue(malformedJson);
+    deps.readFile.mockResolvedValue(malformedJson);
 
     await toolHandler({ path: testFilePath });
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 0,
@@ -371,6 +370,7 @@ function helper() {}
       }),
       testFilePath,
       undefined,
+      true,
     );
   });
 
@@ -378,11 +378,11 @@ function helper() {}
     const testFilePath = '/test/repomix-output.md';
     const markdownContentWithCRLF = `# Files\r\n\r\n## File: src/index.js\r\n\`\`\`javascript\r\nconsole.log('Hello');\r\n\`\`\`\r\n\r\n## File: src/utils.js\r\n\`\`\`javascript\r\nfunction helper() {}\r\n\`\`\``;
 
-    vi.mocked(fs.readFile).mockResolvedValue(markdownContentWithCRLF);
+    deps.readFile.mockResolvedValue(markdownContentWithCRLF);
 
     await toolHandler({ path: testFilePath });
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 2,
@@ -394,6 +394,7 @@ function helper() {}
       }),
       testFilePath,
       undefined,
+      true,
     );
   });
 
@@ -401,11 +402,11 @@ function helper() {}
     const testFilePath = '/test/repomix-output.txt';
     const plainContentWithCRLF = `================\r\nFile: src/index.js\r\n================\r\nconsole.log('Hello');\r\n\r\n================\r\nFile: src/utils.js\r\n================\r\nfunction helper() {}`;
 
-    vi.mocked(fs.readFile).mockResolvedValue(plainContentWithCRLF);
+    deps.readFile.mockResolvedValue(plainContentWithCRLF);
 
     await toolHandler({ path: testFilePath });
 
-    expect(formatPackToolResponse).toHaveBeenCalledWith(
+    expect(deps.formatPackToolResponse).toHaveBeenCalledWith(
       { directory: 'test' },
       expect.objectContaining({
         totalFiles: 2,
@@ -417,6 +418,7 @@ function helper() {}
       }),
       testFilePath,
       undefined,
+      true,
     );
   });
 });

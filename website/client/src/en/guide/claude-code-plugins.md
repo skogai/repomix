@@ -1,3 +1,8 @@
+---
+title: Claude Code Plugins
+description: Install and use official Repomix Claude Code plugins for MCP, slash commands, and AI-powered repository exploration.
+---
+
 # Claude Code Plugins
 
 Repomix provides official plugins for [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) that integrate seamlessly with the AI-powered development environment. These plugins make it easy to analyze and pack codebases directly within Claude Code using natural language commands.
@@ -50,7 +55,7 @@ Foundation plugin that provides AI-powered codebase analysis through MCP server 
 **Features:**
 - Pack local and remote repositories
 - Search through packed outputs
-- Read files with built-in security scanning ([Secretlint](https://github.com/secretlint/secretlint))
+- Read generated output files
 - Automatic Tree-sitter compression (~70% token reduction)
 
 ### 2. repomix-commands (Slash Commands Plugin)

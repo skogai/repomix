@@ -1,42 +1,41 @@
-import fs from 'node:fs/promises';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type fs from 'node:fs/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import * as mcpToolRuntime from '../../../src/mcp/tools/mcpToolRuntime.js';
 import { registerReadRepomixOutputTool } from '../../../src/mcp/tools/readRepomixOutputTool.js';
-
-vi.mock('node:fs/promises');
-vi.mock('../../../src/mcp/tools/mcpToolRuntime.js', async () => {
-  const actual = await vi.importActual('../../../src/mcp/tools/mcpToolRuntime.js');
-  return {
-    ...actual,
-    getOutputFilePath: vi.fn(),
-  };
-});
-vi.mock('../../../src/shared/logger.js', () => ({
-  logger: {
-    trace: vi.fn(),
-    error: vi.fn(),
-  },
-}));
+import { logger } from '../../../src/shared/logger.js';
+import { type MockedDeps, mockOverloaded } from '../../testing/depsDoubles.js';
+import { createMcpServerDouble, type McpServerDouble } from '../../testing/mcpServerDoubles.js';
 
 describe('readRepomixOutputTool', () => {
-  const mockMcpServer = {
-    registerTool: vi.fn(),
-  } as const;
-
-  type ToolHandlerType = (args: { outputId: string; startLine?: number; endLine?: number }) => Promise<{
+  // Strings model clients that send numbers as strings; the input schema coerces them.
+  type ToolHandlerType = (args: {
+    outputId: string;
+    startLine?: number | string;
+    endLine?: number | string;
+  }) => Promise<{
     isError?: boolean;
     content: Array<{ type: string; text: string }>;
   }>;
 
+  let mockMcpServer: McpServerDouble;
   let toolHandler: ToolHandlerType;
+  let deps: MockedDeps<NonNullable<Parameters<typeof registerReadRepomixOutputTool>[2]>>;
 
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.spyOn(logger, 'trace').mockImplementation(() => {});
+    vi.spyOn(logger, 'error').mockImplementation(() => {});
+    deps = {
+      access: vi.fn(),
+      readFile: mockOverloaded<typeof fs.readFile>(),
+      getOutputFilePath: vi.fn(),
+      requiresSecretScan: vi.fn(),
+      createSecretLintConfig: vi.fn().mockReturnValue({}),
+      runSecretLint: vi.fn().mockResolvedValue(null),
+    };
 
-    registerReadRepomixOutputTool(mockMcpServer as unknown as McpServer);
+    mockMcpServer = createMcpServerDouble();
+    registerReadRepomixOutputTool(mockMcpServer.server, undefined, deps);
 
-    toolHandler = mockMcpServer.registerTool.mock.calls[0][2];
+    toolHandler = mockMcpServer.toolHandler<ToolHandlerType>();
   });
 
   it('should register the tool with correct parameters', () => {
@@ -48,11 +47,11 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should return an error if output file ID is not found', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue(undefined);
+    deps.getOutputFilePath.mockReturnValue(undefined);
 
     const result = await toolHandler({ outputId: 'non-existent-id' });
 
-    expect(mcpToolRuntime.getOutputFilePath).toHaveBeenCalledWith('non-existent-id');
+    expect(deps.getOutputFilePath).toHaveBeenCalledWith('non-existent-id');
     expect(result.isError).toBe(true);
     expect(result.content).toHaveLength(1);
     const parsedResult = JSON.parse(result.content[0].text);
@@ -60,13 +59,13 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should return an error if the file does not exist', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockRejectedValue(new Error('File not found'));
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockRejectedValue(new Error('File not found'));
 
     const result = await toolHandler({ outputId: 'test-id' });
 
-    expect(mcpToolRuntime.getOutputFilePath).toHaveBeenCalledWith('test-id');
-    expect(fs.access).toHaveBeenCalledWith('/path/to/file.xml');
+    expect(deps.getOutputFilePath).toHaveBeenCalledWith('test-id');
+    expect(deps.access).toHaveBeenCalledWith('/path/to/file.xml');
     expect(result.isError).toBe(true);
     expect(result.content).toHaveLength(1);
     const parsedResult = JSON.parse(result.content[0].text);
@@ -74,22 +73,50 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should successfully read the file content', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('File content here');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('File content here');
 
     const result = await toolHandler({ outputId: 'test-id' });
 
-    expect(mcpToolRuntime.getOutputFilePath).toHaveBeenCalledWith('test-id');
-    expect(fs.access).toHaveBeenCalledWith('/path/to/file.xml');
-    expect(fs.readFile).toHaveBeenCalledWith('/path/to/file.xml', 'utf8');
+    expect(deps.getOutputFilePath).toHaveBeenCalledWith('test-id');
+    expect(deps.access).toHaveBeenCalledWith('/path/to/file.xml');
+    expect(deps.readFile).toHaveBeenCalledWith('/path/to/file.xml', 'utf8');
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(1);
     // The structured content is handled internally by the MCP framework
   });
 
+  it('should block attach-sourced content that fails the secret scan', async () => {
+    deps.getOutputFilePath.mockReturnValue('/path/to/attached.json');
+    deps.requiresSecretScan.mockReturnValue(true);
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('api_key = "leaked-secret"');
+    // Secret scan flags the content.
+    deps.runSecretLint.mockResolvedValue({ filePath: '/path/to/attached.json', messages: [], type: 'file' });
+
+    const result = await toolHandler({ outputId: 'attached-id' });
+
+    expect(deps.runSecretLint).toHaveBeenCalled();
+    expect(result.isError).toBe(true);
+    const parsedResult = JSON.parse(result.content[0].text);
+    expect(parsedResult.errorMessage).toContain('Security check failed');
+  });
+
+  it('should not secret-scan outputs that are not attach-sourced', async () => {
+    deps.getOutputFilePath.mockReturnValue('/path/to/packed.xml');
+    deps.requiresSecretScan.mockReturnValue(false);
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('File content here');
+
+    const result = await toolHandler({ outputId: 'packed-id' });
+
+    expect(deps.runSecretLint).not.toHaveBeenCalled();
+    expect(result.isError).toBeUndefined();
+  });
+
   it('should handle unexpected errors during execution', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockImplementation(() => {
+    deps.getOutputFilePath.mockImplementation(() => {
       throw new Error('Unexpected error');
     });
 
@@ -102,22 +129,22 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should read specific line range when startLine and endLine are provided', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
     const result = await toolHandler({ outputId: 'test-id', startLine: 2, endLine: 4 });
 
-    expect(fs.readFile).toHaveBeenCalledWith('/path/to/file.xml', 'utf8');
+    expect(deps.readFile).toHaveBeenCalledWith('/path/to/file.xml', 'utf8');
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(1);
     // The structured content is handled internally by the MCP framework
   });
 
   it('should read from startLine to end when only startLine is provided', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
     const result = await toolHandler({ outputId: 'test-id', startLine: 3 });
 
@@ -126,9 +153,9 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should read from beginning to endLine when only endLine is provided', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
     const result = await toolHandler({ outputId: 'test-id', endLine: 2 });
 
@@ -137,9 +164,9 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should return an error if startLine exceeds total lines', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('Line 1\nLine 2\nLine 3');
 
     const result = await toolHandler({ outputId: 'test-id', startLine: 10 });
 
@@ -150,9 +177,9 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should return an error if startLine is greater than endLine', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
     const result = await toolHandler({ outputId: 'test-id', startLine: 4, endLine: 2 });
 
@@ -163,32 +190,32 @@ describe('readRepomixOutputTool', () => {
   });
 
   it('should handle string parameters by coercing them to numbers', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
     // Simulate Cursor AI sending strings instead of numbers
     const result = await toolHandler({
       outputId: 'test-id',
-      startLine: '2' as unknown as number,
-      endLine: '4' as unknown as number,
+      startLine: '2',
+      endLine: '4',
     });
 
-    expect(fs.readFile).toHaveBeenCalledWith('/path/to/file.xml', 'utf8');
+    expect(deps.readFile).toHaveBeenCalledWith('/path/to/file.xml', 'utf8');
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(1);
     // The structured content is handled internally by the MCP framework
   });
 
   it('should handle mixed string and number parameters', async () => {
-    vi.mocked(mcpToolRuntime.getOutputFilePath).mockReturnValue('/path/to/file.xml');
-    vi.mocked(fs.access).mockResolvedValue(undefined);
-    vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
+    deps.getOutputFilePath.mockReturnValue('/path/to/file.xml');
+    deps.access.mockResolvedValue(undefined);
+    deps.readFile.mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
 
     // Test with startLine as string and endLine as number
     const result = await toolHandler({
       outputId: 'test-id',
-      startLine: '2' as unknown as number,
+      startLine: '2',
       endLine: 4,
     });
 

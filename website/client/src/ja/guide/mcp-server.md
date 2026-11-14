@@ -1,3 +1,8 @@
+---
+title: MCPサーバー
+description: RepomixをModel Context Protocolサーバーとして実行し、AIアシスタントがローカルまたはリモートのコードベースを直接パック、検索、読み取りできるようにします。
+---
+
 # MCPサーバー
 
 Repomixは[Model Context Protocol (MCP)](https://modelcontextprotocol.io)をサポートしており、AIアシスタントがコードベースと直接対話できるようになります。MCPサーバーとして実行すると、Repomixはローカルまたはリモートリポジトリを手動でファイル準備することなく、AI分析用にパッケージ化するツールを提供します。
@@ -14,6 +19,30 @@ repomix --mcp
 ```
 
 これによりRepomixがMCPサーバーモードで起動し、Model Context ProtocolをサポートするAIアシスタントから利用できるようになります。
+
+## サンドボックスモード
+
+デフォルトでは、MCPサーバーはホストユーザーがアクセス可能な任意のパスを読み取ることができます。これは信頼できるローカルアシスタントにとっては便利ですが、信頼できないクライアントやエージェントにサーバーを公開する場合は範囲が広すぎます。`--sandbox`フラグは、サーバーのファイルツールを単一のワークスペースディレクトリに制限します：
+
+```bash
+# 現在の作業ディレクトリに制限
+repomix --mcp --sandbox
+
+# 特定のディレクトリに制限
+repomix --mcp --sandbox path/to/project
+```
+
+サンドボックスモードが有効な場合：
+
+- **すべてのパスはワークスペースのルートからの相対パスになります。** 絶対パス、`~`、`..`、Windowsのドライブ/UNCパスは拒否され、（シンボリックリンクを経由する場合を含め）ルートの外に解決されるパスは除外されます。結果やエラーメッセージも相対パスになるため、ホスト側のパスが露出することはありません。これは以下のツールリファレンスにある`directory`引数と`path`引数にも適用されます。サンドボックスモードでは、各表が本来説明する絶対パスではなく、ワークスペースのルートからの相対パスを渡してください。
+- **読み取り専用でルートに制限されたツールのみが登録されます：** `pack_codebase`、`read_repomix_output`、`grep_repomix_output`、`file_system_read_file`、`file_system_read_directory`。リモートパッケージ化、スキル生成、外部出力のアタッチは、ネットワークへのアクセス、ファイルの書き込み、任意パスの参照を伴うため無効化されます。この2つの`file_system_*`ツール自体も、サンドボックスモードでのみ登録され、到達範囲はワークスペースのルートによって制限されます。
+- **設定ファイルは読み込まれません。** `pack_codebase`は、パックするディレクトリの`repomix.config.*`とグローバル設定の両方を無視します。
+
+`--sandbox`なしの場合、`pack_codebase`はパックするディレクトリの`repomix.config.*`を読み込んで信頼します。これはそのディレクトリでコマンドラインから`repomix`を実行した場合と同じです。設定ファイルはコードです。読み込み時に実行されることがあり、リポジトリ外のファイルを読み取ることもできます（[セキュリティ](/ja/guide/security#設定ファイルがコードである理由)を参照）。クローンしたサードパーティのリポジトリなど、信頼できないディレクトリをアシスタントがパックする可能性がある場合は、`--sandbox`を使用してください。
+
+これはツールサーフェスに対するアプリケーションレベルの制限（多層防御）であり、OSレベルのサンドボックスではありません。信頼できないクライアント向けにサーバーをホストする場合でも、コンテナや専用ユーザーなど、プラットフォーム標準の分離手段の下で実行してください。
+
+`--sandbox`はMCPサーバーにのみ影響し、`--mcp`なしでは効果がありません。
 
 ## MCPサーバーの設定
 
@@ -113,6 +142,7 @@ MCPサーバーとして実行すると、Repomixは以下のツールを提供�
 | `compress` | いいえ | `false` | 実装の詳細を削除しながら、重要なコードシグネチャと構造を抽出するTree-sitter圧縮を有効化。セマンティックな意味を保持しながらトークン使用量を約70%削減。`grep_repomix_output`が段階的なコンテンツ取得を可能にするため、通常は不要。 |
 | `includePatterns` | いいえ | — | fast-globパターンを使用して含めるファイル。カンマ区切り（例：`"**/*.{js,ts}"`、`"src/**,docs/**"`） |
 | `ignorePatterns` | いいえ | — | fast-globパターンを使用して除外する追加ファイル。カンマ区切り（例：`"test/**,*.spec.js"`）。`.gitignore`と組み込み除外を補完。 |
+| `outputPatterns` | いいえ | — | 設定ファイルの[`output.patterns`](./configuration.md)オプションに相当する、ファイルごとの含有レベル。`{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`形式のエントリの配列。最初に一致したパターンが優先され、`directoryStructureOnly`は`compress`より優先。どちらのフラグも指定しない一致はフルコンテンツを強制（グローバルな`compress`から特定ファイルを除外する際に有用）。対象リポジトリの`repomix.config.json`内の`output.patterns`を上書き。 |
 | `topFilesLength` | いいえ | `10` | メトリクス要約に表示する最大ファイル数（サイズ順） |
 | `style` | いいえ | `xml` | 出力フォーマットスタイル：`xml`、`markdown`、`json`、または`plain` |
 
@@ -120,12 +150,18 @@ MCPサーバーとして実行すると、Repomixは以下のツールを提供�
 ```json
 {
   "directory": "/path/to/your/project",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
+
+上記の例では（`compress: true`が、いずれのパターンにも一致しないファイルに対するキャッチオールとして機能します）、`src/core/`配下のファイルはフルコンテンツのまま保持され、`docs/`配下のファイルはディレクトリ構造のみが表示され、それ以外は圧縮されます。
 
 ### pack_remote_repository
 
@@ -139,6 +175,7 @@ MCPサーバーとして実行すると、Repomixは以下のツールを提供�
 | `compress` | いいえ | `false` | 実装の詳細を削除しながら、重要なコードシグネチャと構造を抽出するTree-sitter圧縮を有効化。セマンティックな意味を保持しながらトークン使用量を約70%削減。`grep_repomix_output`が段階的なコンテンツ取得を可能にするため、通常は不要。 |
 | `includePatterns` | いいえ | — | fast-globパターンを使用して含めるファイル。カンマ区切り（例：`"**/*.{js,ts}"`、`"src/**,docs/**"`） |
 | `ignorePatterns` | いいえ | — | fast-globパターンを使用して除外する追加ファイル。カンマ区切り（例：`"test/**,*.spec.js"`）。`.gitignore`と組み込み除外を補完。 |
+| `outputPatterns` | いいえ | — | 設定ファイルの[`output.patterns`](./configuration.md)オプションに相当する、ファイルごとの含有レベル。`{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`形式のエントリの配列。最初に一致したパターンが優先され、`directoryStructureOnly`は`compress`より優先。どちらのフラグも指定しない一致はフルコンテンツを強制（グローバルな`compress`から特定ファイルを除外する際に有用）。 |
 | `topFilesLength` | いいえ | `10` | メトリクス要約に表示する最大ファイル数（サイズ順） |
 | `style` | いいえ | `xml` | 出力フォーマットスタイル：`xml`、`markdown`、`json`、または`plain` |
 
@@ -146,9 +183,13 @@ MCPサーバーとして実行すると、Repomixは以下のツールを提供�
 ```json
 {
   "remote": "yamadashy/repomix",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
@@ -168,7 +209,7 @@ MCPサーバーとして実行すると、Repomixは以下のツールを提供�
 **機能：**
 - ウェブベース環境やサンドボックスアプリケーション向けに特別に設計
 - IDを使用して以前に生成された出力の内容を取得
-- ファイルシステムアクセスを必要とせずにパッケージ化されたコードベースへの安全なアクセスを提供
+- ファイルシステムアクセスを必要とせずにパッケージ化されたコードベースへのアクセスを提供
 - 大きなファイルの部分読み込みをサポート
 
 **例：**
@@ -213,48 +254,35 @@ MCPサーバーとして実行すると、Repomixは以下のツールを提供�
 
 ### file_system_read_file と file_system_read_directory
 
-RepomixのMCPサーバーは、AIアシスタントがローカルファイルシステムと安全にやり取りするための2つのファイルシステムツールを提供しています：
+この2つのファイルシステムツールは、[サンドボックスモード](#サンドボックスモード)（`--sandbox`）でのみ利用可能で、到達範囲はワークスペースのルートによって制限されます。`--sandbox`なしでは登録されません。
 
 1. `file_system_read_file`
-  - 絶対パスを使用してローカルファイルシステムからファイルの内容を読み取り
-  - 機密情報を含むファイルへのアクセスを検出・防止する組み込みセキュリティ検証を含む
-  - [Secretlint](https://github.com/secretlint/secretlint)を使用したセキュリティ検証を実装
-  - 機密情報を含むファイル（APIキー、パスワード、シークレット）へのアクセスを防止
-  - ディレクトリトラバーサル攻撃を防ぐための絶対パス検証
-  - 無効なパスやセキュリティの問題に対する明確なエラーメッセージを返す
+  - ワークスペースのルートからの相対パス（例：`src/index.ts`）でファイルの内容を読み取り
+  - 既知のシークレット形式（[Secretlint](https://github.com/secretlint/secretlint)）に一致する内容を、追加のヒューリスティックな安全策として拒否する。アクセス境界はスキャンではなくワークスペースのルート
+  - 無効なパスに対して、ホスト側のパスを露出させることなく明確なエラーメッセージを返す
 
 2. `file_system_read_directory`
-  - 絶対パスを使用してディレクトリの内容を一覧表示
-  - ファイルとサブディレクトリを明確な指標で示すフォーマット済みリストを返す
+  - ワークスペースのルートからの相対パス（例：`.`や`src`）でディレクトリの内容を一覧表示
   - ファイルとディレクトリを明確な指標（`[FILE]`または`[DIR]`）で表示
-  - 適切なエラー処理による安全なディレクトリ走査を提供
-  - パスの検証と絶対パスの確認を実施
   - プロジェクト構造の探索とコードベース組織の理解に有用
-
-両ツールは堅牢なセキュリティ対策を組み込んでいます：
-- ディレクトリトラバーサル攻撃を防ぐための絶対パス検証
-- 適切なアクセス権を確保するための権限チェック
-- 機密情報検出のためのSecretlintとの統合
-- デバッグとセキュリティ認識のための明確なエラーメッセージ
 
 **例：**
 ```typescript
 // ファイルの読み取り
 const fileContent = await tools.file_system_read_file({
-  path: '/absolute/path/to/file.txt'
+  path: 'src/index.ts'
 });
 
 // ディレクトリの内容一覧
 const dirContent = await tools.file_system_read_directory({
-  path: '/absolute/path/to/directory'
+  path: 'src'
 });
 ```
 
 これらのツールは、AIアシスタントが以下のような操作を必要とする場合に特に有用です：
-- コードベース内の特定のファイルを分析
+- ワークスペース内の特定のファイルを分析
 - ディレクトリ構造をナビゲート
 - ファイルの存在とアクセス可能性を確認
-- 安全なファイルシステム操作を確保
 
 ## RepomixをMCPサーバーとして使用する利点
 

@@ -1,3 +1,8 @@
+---
+title: "MCP-Server"
+description: "Betreiben Sie Repomix als Model-Context-Protocol-Server, damit KI-Assistenten lokale oder Remote-Codebasen direkt packen, durchsuchen und lesen können."
+---
+
 # MCP-Server
 
 Repomix unterstützt das [Model Context Protocol (MCP)](https://modelcontextprotocol.io), das es KI-Assistenten ermöglicht, direkt mit Ihrer Codebasis zu interagieren. Wenn Repomix als MCP-Server ausgeführt wird, stellt es Tools bereit, die es KI-Assistenten ermöglichen, lokale oder entfernte Repositories ohne manuelle Dateivorbereitung für die Analyse zu verpacken.
@@ -14,6 +19,30 @@ repomix --mcp
 ```
 
 Dadurch wird Repomix im MCP-Server-Modus gestartet und steht KI-Assistenten zur Verfügung, die das Model Context Protocol unterstützen.
+
+## Sandbox-Modus
+
+Standardmäßig kann der MCP-Server jeden Pfad lesen, auf den auch der Host-Benutzer zugreifen kann. Das ist praktisch für einen vertrauenswürdigen lokalen Assistenten, aber zu weitreichend, wenn der Server einem nicht vertrauenswürdigen Client oder Agenten zugänglich gemacht wird. Die `--sandbox`-Flag beschränkt die Datei-Tools des Servers auf ein einzelnes Workspace-Verzeichnis:
+
+```bash
+# Auf das aktuelle Arbeitsverzeichnis beschränken
+repomix --mcp --sandbox
+
+# Auf ein bestimmtes Verzeichnis beschränken
+repomix --mcp --sandbox path/to/project
+```
+
+Wenn der Sandbox-Modus aktiviert ist:
+
+- **Jeder Pfad ist relativ zur Wurzel des Workspace.** Absolute Pfade, `~`, `..` sowie Windows-Laufwerks-/UNC-Pfade werden abgelehnt, und Pfade, die außerhalb der Wurzel aufgelöst werden (auch über Symlinks), werden verworfen. Ergebnisse und Fehlermeldungen sind ebenfalls relativ, sodass Host-Pfade nicht offengelegt werden. Dies gilt für die Argumente `directory` und `path` in der Tool-Referenz weiter unten: Im Sandbox-Modus werden sie relativ zur Wurzel des Workspace angegeben, nicht als absolute Pfade, wie sie diese Tabellen sonst beschreiben.
+- **Es werden nur schreibgeschützte, auf die Wurzel beschränkte Tools registriert:** `pack_codebase`, `read_repomix_output`, `grep_repomix_output`, `file_system_read_file` und `file_system_read_directory`. Remote-Packing, Skill-Generierung und das Anhängen externer Ausgaben sind deaktiviert, da sie auf das Netzwerk zugreifen, Dateien schreiben oder beliebige Pfade referenzieren. Die beiden `file_system_*`-Tools selbst sind nur im Sandbox-Modus verfügbar, wo die Wurzel des Workspace begrenzt, was sie erreichen können.
+- **Konfigurationsdateien werden nicht geladen.** `pack_codebase` ignoriert sowohl die `repomix.config.*` des zu packenden Verzeichnisses als auch Ihre globale Konfiguration.
+
+Ohne `--sandbox` lädt `pack_codebase` die `repomix.config.*` im zu packenden Verzeichnis und vertraut ihr, genauso, als würden Sie `repomix` dort über die Kommandozeile ausführen. Eine Konfigurationsdatei ist Code: Sie kann beim Laden ausgeführt werden und Dateien außerhalb des Repositorys lesen (siehe [Sicherheit](/de/guide/security#warum-eine-konfigurationsdatei-code-ist)). Wenn Ihr Assistent Verzeichnisse packen darf, denen Sie nicht vertrauen, etwa geklonte Repositorys von Dritten, verwenden Sie `--sandbox`.
+
+Dies ist eine Beschränkung der Tool-Oberfläche auf Anwendungsebene (Defense in Depth), keine Sandbox auf Betriebssystemebene. Wenn Sie den Server für nicht vertrauenswürdige Clients bereitstellen, sollten Sie ihn weiterhin unter der üblichen Isolation Ihrer Plattform ausführen (Container, dedizierte Benutzer).
+
+`--sandbox` wirkt sich nur auf den MCP-Server aus; ohne `--mcp` hat es keine Wirkung.
 
 ## MCP-Server konfigurieren
 
@@ -113,6 +142,7 @@ Dieses Tool verpackt ein lokales Code-Verzeichnis in eine XML-Datei für die KI-
 | `compress` | Nein | `false` | Tree-sitter-Komprimierung aktivieren, um wesentliche Code-Signaturen und -Strukturen zu extrahieren und Implementierungsdetails zu entfernen. Reduziert die Token-Nutzung um ~70% bei Beibehaltung der semantischen Bedeutung. Normalerweise nicht erforderlich, da `grep_repomix_output` inkrementelle Inhaltsabrufung ermöglicht. |
 | `includePatterns` | Nein | — | Dateien zum Einschließen mit fast-glob-Mustern. Kommagetrennt (z.B. `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Nein | — | Zusätzliche Dateien zum Ausschließen mit fast-glob-Mustern. Kommagetrennt (z.B. `"test/**,*.spec.js"`). Ergänzt `.gitignore` und eingebaute Ausschlüsse. |
+| `outputPatterns` | Nein | — | Datei-bezogene Einschlussebenen, die die Konfigurationsdatei-Option [`output.patterns`](./configuration.md) widerspiegeln. Ein Array von `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`-Einträgen. Das erste passende Muster gewinnt; `directoryStructureOnly` hat Vorrang vor `compress`, und eine Übereinstimmung ohne beide Flags erzwingt den vollständigen Inhalt (nützlich, um Dateien von einer globalen `compress`-Einstellung auszunehmen). Überschreibt alle `output.patterns` aus der `repomix.config.json` des Ziel-Repositorys. |
 | `topFilesLength` | Nein | `10` | Anzahl der größten Dateien nach Größe in der Metrik-Zusammenfassung |
 | `style` | Nein | `xml` | Ausgabeformat: `xml`, `markdown`, `json` oder `plain` |
 
@@ -120,12 +150,18 @@ Dieses Tool verpackt ein lokales Code-Verzeichnis in eine XML-Datei für die KI-
 ```json
 {
   "directory": "/path/to/your/project",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
+
+Mit dem obigen Beispiel (wobei `compress: true` als Catch-all für nicht erfasste Dateien dient) bleiben Dateien unter `src/core/` mit vollständigem Inhalt erhalten, Dateien unter `docs/` werden nur in der Verzeichnisstruktur aufgeführt, und alles andere wird komprimiert.
 
 ### pack_remote_repository
 
@@ -139,6 +175,7 @@ Dieses Tool holt, klont und verpackt ein GitHub-Repository in eine XML-Datei fü
 | `compress` | Nein | `false` | Tree-sitter-Komprimierung aktivieren, um wesentliche Code-Signaturen und -Strukturen zu extrahieren und Implementierungsdetails zu entfernen. Reduziert die Token-Nutzung um ~70% bei Beibehaltung der semantischen Bedeutung. Normalerweise nicht erforderlich, da `grep_repomix_output` inkrementelle Inhaltsabrufung ermöglicht. |
 | `includePatterns` | Nein | — | Dateien zum Einschließen mit fast-glob-Mustern. Kommagetrennt (z.B. `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Nein | — | Zusätzliche Dateien zum Ausschließen mit fast-glob-Mustern. Kommagetrennt (z.B. `"test/**,*.spec.js"`). Ergänzt `.gitignore` und eingebaute Ausschlüsse. |
+| `outputPatterns` | Nein | — | Datei-bezogene Einschlussebenen, die die Konfigurationsdatei-Option [`output.patterns`](./configuration.md) widerspiegeln. Ein Array von `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`-Einträgen. Das erste passende Muster gewinnt; `directoryStructureOnly` hat Vorrang vor `compress`, und eine Übereinstimmung ohne beide Flags erzwingt den vollständigen Inhalt (nützlich, um Dateien von einer globalen `compress`-Einstellung auszunehmen). |
 | `topFilesLength` | Nein | `10` | Anzahl der größten Dateien nach Größe in der Metrik-Zusammenfassung |
 | `style` | Nein | `xml` | Ausgabeformat: `xml`, `markdown`, `json` oder `plain` |
 
@@ -146,9 +183,13 @@ Dieses Tool holt, klont und verpackt ein GitHub-Repository in eine XML-Datei fü
 ```json
 {
   "remote": "yamadashy/repomix",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
@@ -168,7 +209,7 @@ Dieses Tool liest den Inhalt einer von Repomix generierten Ausgabedatei. Es unte
 **Funktionen:**
 - Speziell für webbasierte Umgebungen oder Sandbox-Anwendungen entwickelt
 - Ruft den Inhalt zuvor generierter Ausgaben über ihre ID ab
-- Bietet sicheren Zugriff auf verpackte Codebase ohne Dateisystemzugriff
+- Bietet Zugriff auf verpackte Codebase ohne Dateisystemzugriff
 - Unterstützt partielles Lesen für große Dateien
 
 **Beispiel:**
@@ -213,48 +254,35 @@ Dieses Tool durchsucht Muster in einer Repomix-Ausgabedatei mit grep-ähnlicher 
 
 ### file_system_read_file und file_system_read_directory
 
-Der Repomix MCP-Server bietet zwei Dateisystemwerkzeuge, die es KI-Assistenten ermöglichen, sicher mit dem lokalen Dateisystem zu interagieren:
+Diese beiden Dateisystem-Tools sind nur im [Sandbox-Modus](#sandbox-modus) (`--sandbox`) verfügbar, wo die Wurzel des Workspace begrenzt, was sie erreichen können. Ohne `--sandbox` werden sie nicht registriert.
 
 1. `file_system_read_file`
-  - Liest Dateiinhalte aus dem lokalen Dateisystem unter Verwendung absoluter Pfade
-  - Beinhaltet eingebaute Sicherheitsvalidierung zur Erkennung und Verhinderung des Zugriffs auf Dateien mit sensiblen Informationen
-  - Implementiert Sicherheitsvalidierung mit [Secretlint](https://github.com/secretlint/secretlint)
-  - Verhindert den Zugriff auf Dateien mit sensiblen Informationen (API-Schlüssel, Passwörter, Geheimnisse)
-  - Validiert absolute Pfade zur Verhinderung von Directory Traversal-Angriffen
-  - Liefert klare Fehlermeldungen für ungültige Pfade und Sicherheitsprobleme
+  - Liest Dateiinhalte an einem Pfad relativ zur Wurzel des Workspace (z. B. `src/index.ts`)
+  - Lehnt Inhalte ab, die bekannten Geheimnisformaten entsprechen ([Secretlint](https://github.com/secretlint/secretlint)), als zusätzliche heuristische Schutzmaßnahme; die Zugriffsgrenze ist die Wurzel des Workspace, nicht der Scan
+  - Liefert klare Fehlermeldungen für ungültige Pfade, ohne Host-Pfade offenzulegen
 
 2. `file_system_read_directory`
-  - Listet den Inhalt eines Verzeichnisses unter Verwendung eines absoluten Pfads
-  - Gibt eine formatierte Liste zurück, die Dateien und Unterverzeichnisse mit klaren Indikatoren zeigt
+  - Listet den Inhalt eines Verzeichnisses an einem Pfad relativ zur Wurzel des Workspace auf (z. B. `.` oder `src`)
   - Zeigt Dateien und Verzeichnisse mit klaren Indikatoren (`[FILE]` oder `[DIR]`)
-  - Bietet sichere Verzeichnisnavigation mit angemessener Fehlerbehandlung
-  - Validiert Pfade und stellt sicher, dass sie absolut sind
   - Nützlich für die Erkundung der Projektstruktur und das Verständnis der Codebase-Organisation
-
-Beide Werkzeuge beinhalten robuste Sicherheitsmaßnahmen:
-- Validierung absoluter Pfade zur Verhinderung von Directory Traversal-Angriffen
-- Berechtigungsprüfungen zur Gewährleistung angemessener Zugriffsrechte
-- Integration mit Secretlint zur Erkennung sensibler Informationen
-- Klare Fehlermeldungen für Debugging und Sicherheitsbewusstsein
 
 **Beispiel:**
 ```typescript
 // Datei lesen
 const fileContent = await tools.file_system_read_file({
-  path: '/absolute/path/to/file.txt'
+  path: 'src/index.ts'
 });
 
 // Verzeichnisinhalt auflisten
 const dirContent = await tools.file_system_read_directory({
-  path: '/absolute/path/to/directory'
+  path: 'src'
 });
 ```
 
 Diese Werkzeuge sind besonders nützlich, wenn KI-Assistenten:
-- Bestimmte Dateien in der Codebase analysieren müssen
+- Bestimmte Dateien im Workspace analysieren müssen
 - Verzeichnisstrukturen navigieren müssen
 - Existenz und Zugänglichkeit von Dateien überprüfen müssen
-- Sichere Dateisystemoperationen gewährleisten müssen
 
 ## Vorteile der Verwendung von Repomix als MCP-Server
 

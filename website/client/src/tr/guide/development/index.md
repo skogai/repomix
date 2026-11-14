@@ -1,3 +1,8 @@
+---
+title: "Repomix'e Katkıda Bulunma"
+description: "Repomix geliştirme ortamını kurun, testleri çalıştırın, kodu lint edin, proje yapısını anlayın ve open source projeye değişikliklerle katkıda bulunun."
+---
+
 # Repomix'e Katkıda Bulunma
 
 **Repomix**'e gösterdiğiniz ilgi için teşekkürler! Projeyi daha da iyi hale getirmenize yardımcı olmaktan memnuniyet duyarız. Bu kılavuz, projeye katkıda bulunmaya başlamanız için gereken bilgileri sunar.
@@ -15,7 +20,7 @@
 
 ### Ön Koşullar
 
-- Node.js ≥ 20.0.0
+- Node.js ≥ 22.0.0
 - Git
 - npm
 - Docker (isteğe bağlı; web sitesini çalıştırmak veya konteyner içinde geliştirme için)
@@ -35,6 +40,25 @@ npm install
 # Run CLI
 npm run repomix
 ```
+
+### Nix ile Geliştirme
+
+[Nix](https://nixos.org/download) flakes etkinleştirilmişse, Node.js 24 ve Git önceden yüklenmiş yeniden üretilebilir bir geliştirme shell'ine girebilirsiniz:
+
+```bash
+nix develop
+```
+
+Shell içinde standart `npm` iş akışı beklendiği gibi çalışır:
+
+```bash
+npm ci
+npm run build
+npm run test
+npm run lint
+```
+
+Not: Bu shell, Repomix'in kendisi üzerinde çalışmak içindir; onu CLI olarak kurmak için değildir.
 
 ### Docker ile Geliştirme
 

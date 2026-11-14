@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { generateOutput } from '../../../src/core/output/outputGenerate.js';
 import {
   buildOutputSplitGroups,
   buildSplitOutputFilePath,
   generateSplitOutputParts,
   getRootEntry,
+  subdivideSplitGroup,
 } from '../../../src/core/output/outputSplit.js';
+import { createMockConfig as createMergedConfig } from '../../testing/testUtils.js';
 
 describe('outputSplit', () => {
   describe('getRootEntry', () => {
@@ -49,6 +52,45 @@ describe('outputSplit', () => {
     });
   });
 
+  describe('subdivideSplitGroup', () => {
+    it('splits a root-entry group one directory level deeper', () => {
+      const group = {
+        rootEntry: 'src',
+        processedFiles: [
+          { path: 'src/a.ts', content: 'a' },
+          { path: 'src/sub/b.ts', content: 'b' },
+          { path: 'src/sub/c.ts', content: 'c' },
+        ],
+        allFilePaths: ['src/a.ts', 'src/sub/b.ts', 'src/sub/c.ts', 'src/sub/ignored.txt'],
+      };
+
+      const children = subdivideSplitGroup(group);
+
+      expect(children?.map((c) => c.rootEntry)).toEqual(['src/a.ts', 'src/sub']);
+      const sub = children?.find((c) => c.rootEntry === 'src/sub');
+      expect(sub?.processedFiles.map((f) => f.path).sort()).toEqual(['src/sub/b.ts', 'src/sub/c.ts']);
+      expect(sub?.allFilePaths.sort()).toEqual(['src/sub/b.ts', 'src/sub/c.ts', 'src/sub/ignored.txt']);
+    });
+
+    it('returns null for a single indivisible file', () => {
+      expect(
+        subdivideSplitGroup({
+          rootEntry: 'README.md',
+          processedFiles: [{ path: 'README.md', content: 'readme' }],
+          allFilePaths: ['README.md'],
+        }),
+      ).toBeNull();
+
+      expect(
+        subdivideSplitGroup({
+          rootEntry: 'src/large.ts',
+          processedFiles: [{ path: 'src/large.ts', content: 'large' }],
+          allFilePaths: ['src/large.ts'],
+        }),
+      ).toBeNull();
+    });
+  });
+
   describe('buildSplitOutputFilePath', () => {
     it('inserts part index before extension', () => {
       expect(buildSplitOutputFilePath('repomix-output.xml', 1)).toBe('repomix-output.1.xml');
@@ -76,7 +118,87 @@ describe('outputSplit', () => {
       generateOutput: async () => 'x'.repeat(outputSize),
     });
 
-    it('throws error when single root entry exceeds maxBytesPerPart', async () => {
+    const getDirectoryTree = (content: string): string => {
+      const match = content.match(/Directory Structure\n=+\n([\s\S]*?)\n\n=+\nFiles/);
+      expect(match).not.toBeNull();
+      return match?.[1].trim() ?? '';
+    };
+
+    it('scopes each part directory tree to the files in that part', async () => {
+      const processedFiles = ['a/file.txt', 'b/file.txt', 'c/file.txt'].map((filePath, index) => ({
+        path: filePath,
+        content: String.fromCharCode(65 + index).repeat(2000),
+      }));
+      const allFilePaths = processedFiles.map((file) => file.path);
+      const baseConfig = createMergedConfig({
+        output: {
+          filePath: 'repomix-output.txt',
+          style: 'plain',
+          git: { sortByChanges: false, includeDiffs: false, includeLogs: false },
+        },
+      });
+
+      const result = await generateSplitOutputParts({
+        rootDirs: ['/repo'],
+        baseConfig,
+        processedFiles,
+        allFilePaths,
+        maxBytesPerPart: 5000,
+        gitDiffResult: undefined,
+        gitLogResult: undefined,
+        progressCallback: () => {},
+        filePathsByRoot: [{ rootLabel: 'repo', files: allFilePaths }],
+        deps: { generateOutput },
+      });
+
+      expect(result).toHaveLength(3);
+      expect(result.map((part) => getDirectoryTree(part.content))).toEqual([
+        'a/\n  file.txt',
+        'b/\n  file.txt',
+        'c/\n  file.txt',
+      ]);
+    });
+
+    it('preserves multi-root labels while scoping split directory trees', async () => {
+      const processedFiles = ['root-a/file.txt', 'root-b/file.txt'].map((filePath, index) => ({
+        path: filePath,
+        content: String.fromCharCode(65 + index).repeat(2000),
+      }));
+      const allFilePaths = processedFiles.map((file) => file.path);
+      const baseConfig = createMergedConfig({
+        output: {
+          filePath: 'repomix-output.txt',
+          style: 'plain',
+          git: { sortByChanges: false, includeDiffs: false, includeLogs: false },
+        },
+      });
+
+      const result = await generateSplitOutputParts({
+        rootDirs: ['/root-a', '/root-b'],
+        baseConfig,
+        processedFiles,
+        allFilePaths,
+        maxBytesPerPart: 5000,
+        gitDiffResult: undefined,
+        gitLogResult: undefined,
+        progressCallback: () => {},
+        filePathsByRoot: [
+          { rootLabel: 'root-a', files: ['file.txt'] },
+          { rootLabel: 'root-b', files: ['file.txt'] },
+        ],
+        deps: { generateOutput },
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result.map((part) => getDirectoryTree(part.content))).toEqual([
+        '[root-a]/\n  file.txt',
+        '[root-b]/\n  file.txt',
+      ]);
+    });
+
+    it('throws error when a single indivisible file exceeds maxBytesPerPart', async () => {
+      // A lone file cannot be split across parts, so once subdivision bottoms out at it the
+      // output still cannot be produced.
       const processedFiles = [{ path: 'src/large.ts', content: 'large content' }];
       const allFilePaths = ['src/large.ts'];
 
@@ -93,6 +215,45 @@ describe('outputSplit', () => {
           deps: createMockDeps(100), // Output larger than limit
         }),
       ).rejects.toThrow(/exceeds max size/);
+    });
+
+    it('subdivides a single oversized root entry into multiple parts instead of throwing', async () => {
+      // All files live under one root entry 'src', so the whole group is far larger than the
+      // limit. Previously this threw "root entry 'src' exceeds max size" (issue #1134); now the
+      // group is split one level deeper until each part fits.
+      const processedFiles = [
+        { path: 'src/a.ts', content: 'a' },
+        { path: 'src/b.ts', content: 'b' },
+        { path: 'src/sub/c.ts', content: 'c' },
+        { path: 'src/sub/d.ts', content: 'd' },
+      ];
+      const allFilePaths = processedFiles.map((f) => f.path);
+
+      // Size grows with the number of processed files in the chunk, so one file fits but the
+      // full 'src' group does not.
+      const mockGenerateOutput = async (_rootDirs: string[], _config: unknown, files: Array<{ path: string }>) =>
+        'x'.repeat(30 + files.length * 50);
+
+      const result = await generateSplitOutputParts({
+        rootDirs: ['/test'],
+        baseConfig: createMockConfig(),
+        processedFiles,
+        allFilePaths,
+        maxBytesPerPart: 100, // fits one file (80), not two (130)
+        gitDiffResult: undefined,
+        gitLogResult: undefined,
+        progressCallback: () => {},
+        deps: { generateOutput: mockGenerateOutput as ReturnType<typeof createMockDeps>['generateOutput'] },
+      });
+
+      expect(result.length).toBeGreaterThan(1);
+      for (const part of result) {
+        expect(part.byteLength).toBeLessThanOrEqual(100);
+      }
+
+      // Every file is covered exactly once across all parts, none dropped or duplicated.
+      const packedFiles = result.flatMap((p) => p.groups.flatMap((g) => g.processedFiles.map((f) => f.path)));
+      expect(packedFiles.sort()).toEqual(['src/a.ts', 'src/b.ts', 'src/sub/c.ts', 'src/sub/d.ts']);
     });
 
     it('throws error for invalid maxBytesPerPart', async () => {
@@ -172,17 +333,21 @@ describe('outputSplit', () => {
         deps: { generateOutput: mockGenerateOutput as ReturnType<typeof createMockDeps>['generateOutput'] },
       });
 
-      // Should create multiple parts
-      expect(result.length).toBeGreaterThan(1);
-
-      // Each part should have correct structure
-      for (const part of result) {
-        expect(part.index).toBeGreaterThan(0);
-        expect(part.filePath).toContain(`.${part.index}.`);
-        expect(part.content).toBeTruthy();
-        expect(part.byteLength).toBeGreaterThan(0);
-        expect(part.groups.length).toBeGreaterThan(0);
-      }
+      // Root entries are sorted (docs, src, tests); each pair would exceed 120 bytes, so each lands in its own part.
+      // Sizes follow the mock: 30 + 40 * fileCount.
+      expect(
+        result.map((part) => ({
+          index: part.index,
+          filePath: part.filePath,
+          content: part.content,
+          byteLength: part.byteLength,
+          rootEntries: part.groups.map((g) => g.rootEntry),
+        })),
+      ).toEqual([
+        { index: 1, filePath: 'repomix-output.1.xml', content: 'x'.repeat(70), byteLength: 70, rootEntries: ['docs'] },
+        { index: 2, filePath: 'repomix-output.2.xml', content: 'x'.repeat(110), byteLength: 110, rootEntries: ['src'] },
+        { index: 3, filePath: 'repomix-output.3.xml', content: 'x'.repeat(70), byteLength: 70, rootEntries: ['tests'] },
+      ]);
 
       // All groups should be distributed across parts (no duplicates)
       const allGroupRootEntries = result.flatMap((p) => p.groups.map((g) => g.rootEntry));
@@ -255,8 +420,8 @@ describe('outputSplit', () => {
       const callsWithGitData = callArgs.filter((c) => c.gitDiffResult !== undefined);
       const callsWithoutGitData = callArgs.filter((c) => c.gitDiffResult === undefined);
 
-      // At least one call should have git data (part 1)
-      expect(callsWithGitData.length).toBeGreaterThan(0);
+      // Part 1 is rendered twice (src alone, then src + tests, which overflows), both with git data
+      expect(callsWithGitData).toHaveLength(2);
 
       // All calls with git data should have the correct values
       for (const call of callsWithGitData) {
@@ -264,8 +429,8 @@ describe('outputSplit', () => {
         expect(call.gitLogResult).toEqual(gitLogResult);
       }
 
-      // Calls without git data should exist (part 2+)
-      expect(callsWithoutGitData.length).toBeGreaterThan(0);
+      // Part 2 (tests) is rendered once without git data
+      expect(callsWithoutGitData).toHaveLength(1);
     });
   });
 });

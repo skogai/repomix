@@ -6,6 +6,10 @@ import { TOKEN_ENCODINGS } from '../core/metrics/tokenEncodings.js';
 export const repomixOutputStyleSchema = v.picklist(['xml', 'markdown', 'json', 'plain']);
 export type RepomixOutputStyle = v.InferOutput<typeof repomixOutputStyleSchema>;
 
+// Output file path style enum
+export const repomixOutputFilePathStyleSchema = v.picklist(['target-relative', 'cwd-relative']);
+export type RepomixOutputFilePathStyle = v.InferOutput<typeof repomixOutputFilePathStyleSchema>;
+
 // Default values map
 export const defaultFilePathMap: Record<RepomixOutputStyle, string> = {
   xml: 'repomix-output.xml',
@@ -14,18 +18,56 @@ export const defaultFilePathMap: Record<RepomixOutputStyle, string> = {
   json: 'repomix-output.json',
 } as const;
 
+// Per-file inclusion level pattern (output.patterns).
+// Each entry targets files by glob (matched the same way as include/ignore) and
+// overrides the global output.compress setting for matching files. Patterns are
+// evaluated in array order and the first match wins. `directoryStructureOnly`
+// takes precedence over `compress`: the file is listed in the directory
+// structure but its content block is omitted from the output.
+export const outputPatternSchema = v.object({
+  pattern: v.string(),
+  compress: v.optional(v.boolean()),
+  directoryStructureOnly: v.optional(v.boolean()),
+});
+export type OutputPattern = v.InferOutput<typeof outputPatternSchema>;
+
+// File processor error handling mode (input.processors[].onError).
+// - `fail` (default): abort the whole pack when the command exits non-zero or times out.
+// - `skip`: log a warning and fall back to the file's original content.
+export const fileProcessorOnErrorSchema = v.picklist(['fail', 'skip']);
+export type FileProcessorOnError = v.InferOutput<typeof fileProcessorOnErrorSchema>;
+
+// Per-file external command transform (input.processors).
+// Each entry targets files by glob (matched the same way as include/ignore) and
+// replaces matching files' content with the command's stdout before packing.
+// Entries are evaluated in array order and the first match wins (one processor
+// per file, no chaining). `command` must contain a `{file}` placeholder, which
+// is substituted with a temp file holding the file's current content.
+export const fileProcessorSchema = v.object({
+  pattern: v.string(),
+  command: v.string(),
+  // Per-command timeout in milliseconds. Defaults to DEFAULT_FILE_PROCESSOR_TIMEOUT_MS.
+  // Capped at Node's max 32-bit timer delay (2^31 - 1); larger values are clamped
+  // to ~1ms by Node, which would make the command fail instantly.
+  timeout: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_147_483_647))),
+  onError: v.optional(fileProcessorOnErrorSchema),
+});
+export type FileProcessor = v.InferOutput<typeof fileProcessorSchema>;
+
 // Base config schema
 export const repomixConfigBaseSchema = v.object({
   $schema: v.optional(v.string()),
   input: v.optional(
     v.object({
       maxFileSize: v.optional(v.number()),
+      processors: v.optional(v.array(fileProcessorSchema)),
     }),
   ),
   output: v.optional(
     v.object({
       filePath: v.optional(v.string()),
       style: v.optional(repomixOutputStyleSchema),
+      filePathStyle: v.optional(repomixOutputFilePathStyleSchema),
       parsableStyle: v.optional(v.boolean()),
       headerText: v.optional(v.string()),
       instructionFilePath: v.optional(v.string()),
@@ -35,6 +77,7 @@ export const repomixConfigBaseSchema = v.object({
       removeComments: v.optional(v.boolean()),
       removeEmptyLines: v.optional(v.boolean()),
       compress: v.optional(v.boolean()),
+      patterns: v.optional(v.array(outputPatternSchema)),
       topFilesLength: v.optional(v.number()),
       showLineNumbers: v.optional(v.boolean()),
       truncateBase64: v.optional(v.boolean()),
@@ -43,6 +86,7 @@ export const repomixConfigBaseSchema = v.object({
       includeFullDirectoryStructure: v.optional(v.boolean()),
       splitOutput: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER))),
       tokenCountTree: v.optional(v.union([v.boolean(), v.number(), v.string()])),
+      tokenBudget: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER))),
       git: v.optional(
         v.object({
           sortByChanges: v.optional(v.boolean()),
@@ -83,6 +127,7 @@ export const repomixConfigDefaultSchema = v.object({
   output: v.object({
     filePath: v.optional(v.string(), defaultFilePathMap.xml),
     style: v.optional(repomixOutputStyleSchema, 'xml'),
+    filePathStyle: v.optional(repomixOutputFilePathStyleSchema, 'target-relative'),
     parsableStyle: v.optional(v.boolean(), false),
     headerText: v.optional(v.string()),
     instructionFilePath: v.optional(v.string()),
@@ -100,6 +145,8 @@ export const repomixConfigDefaultSchema = v.object({
     includeFullDirectoryStructure: v.optional(v.boolean(), false),
     splitOutput: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER))),
     tokenCountTree: v.optional(v.union([v.boolean(), v.number(), v.string()]), false),
+    // No default: undefined means "unlimited" (no budget enforced), preserving current behavior.
+    tokenBudget: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER))),
     git: v.object({
       sortByChanges: v.optional(v.boolean(), true),
       sortByChangesMaxCommits: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 100),
@@ -136,6 +183,11 @@ export const repomixConfigCliSchema = v.intersect([
       }),
     ),
     skillGenerate: v.optional(v.union([v.string(), v.boolean()])),
+    // Runtime gate for input.processors (arbitrary command execution). Not a
+    // config-file field: it is injected only by the real CLI entry point so that
+    // library `pack()`/`runCli()` callers, MCP, and the hosted website default
+    // to OFF. Remote runs enable it only with --remote-trust-config.
+    enableFileProcessors: v.optional(v.boolean()),
   }),
 ]);
 

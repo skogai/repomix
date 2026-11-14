@@ -1,3 +1,8 @@
+---
+title: "Grundlegende Verwendung"
+description: "Nutzen Sie die Repomix-CLI, um Verzeichnisse, Remote-Repositories, ausgewählte Dateien, Git-Diffs, Commit-Logs, geteilte Ausgaben, Token-Zählungen und komprimierten Code zu packen."
+---
+
 # Grundlegende Verwendung
 
 ## Schnellstart
@@ -50,6 +55,9 @@ repomix --remote https://github.com/user/repo
 
 # Mit Kurzform
 repomix --remote user/repo
+
+# Kurzform ohne --remote verwenden (automatisch erkannt)
+repomix user/repo
 
 # Bestimmter Branch/Tag/Commit
 repomix --remote user/repo --remote-branch main

@@ -1,3 +1,8 @@
+---
+title: Server MCP
+description: Jalankan Repomix sebagai server Model Context Protocol agar AI assistant dapat mengemas, mencari, dan membaca codebase lokal atau remote secara langsung.
+---
+
 # Server MCP
 
 Repomix mendukung [Model Context Protocol (MCP)](https://modelcontextprotocol.io), memungkinkan asisten AI untuk berinteraksi langsung dengan codebase Anda. Ketika dijalankan sebagai server MCP, Repomix menyediakan tools yang memungkinkan asisten AI untuk mengemas repository lokal atau remote untuk analisis tanpa memerlukan persiapan file manual.
@@ -14,6 +19,30 @@ repomix --mcp
 ```
 
 Ini memulai Repomix dalam mode server MCP, membuatnya tersedia untuk asisten AI yang mendukung Model Context Protocol.
+
+## Mode Sandbox
+
+Secara default, server MCP dapat membaca path apa pun yang dapat diakses oleh pengguna host. Hal ini nyaman untuk asisten lokal yang tepercaya, tetapi terlalu luas ketika server diekspos ke klien atau agent yang tidak tepercaya. Flag `--sandbox` membatasi tools file server ke satu direktori workspace:
+
+```bash
+# Batasi ke direktori kerja saat ini
+repomix --mcp --sandbox
+
+# Batasi ke direktori tertentu
+repomix --mcp --sandbox path/to/project
+```
+
+Ketika mode sandbox aktif:
+
+- **Setiap path bersifat relatif terhadap root workspace.** Path absolut, `~`, `..`, dan path drive/UNC Windows ditolak, dan path yang mengarah ke luar root (termasuk melalui symlink) akan dijatuhkan. Hasil dan pesan error juga bersifat relatif, sehingga path host tidak terekspos. Ini berlaku untuk argumen `directory` dan `path` pada referensi tools di bawah: dalam mode sandbox, berikan keduanya secara relatif terhadap root workspace, bukan sebagai path absolut seperti yang biasanya dijelaskan pada tabel-tabel tersebut.
+- **Hanya tools read-only yang dibatasi ke root yang didaftarkan:** `pack_codebase`, `read_repomix_output`, `grep_repomix_output`, `file_system_read_file`, dan `file_system_read_directory`. Pengemasan remote, pembuatan skill, dan pelampiran output eksternal dinonaktifkan, karena tools tersebut mengakses jaringan, menulis file, atau merujuk ke path sembarang. Kedua tools `file_system_*` itu sendiri hanya tersedia dalam mode sandbox, di mana root workspace membatasi apa yang dapat mereka jangkau.
+- **File konfigurasi tidak dimuat.** `pack_codebase` mengabaikan `repomix.config.*` dari direktori yang dikemas maupun konfigurasi global Anda.
+
+Tanpa `--sandbox`, `pack_codebase` memuat `repomix.config.*` di direktori yang dikemasnya dan memercayainya, sama seperti menjalankan `repomix` di sana dari command line. File konfigurasi adalah kode: file tersebut dapat dijalankan saat dimuat dan membaca file di luar repositori (lihat [Keamanan](/id/guide/security#mengapa-file-konfigurasi-adalah-kode)). Jika asisten Anda dapat mengemas direktori yang tidak Anda percayai, seperti repositori pihak ketiga hasil clone, gunakan `--sandbox`.
+
+Ini adalah pembatasan permukaan tools di level aplikasi (defense in depth), bukan sandbox di level OS. Saat meng-host server untuk klien yang tidak tepercaya, tetap jalankan di bawah isolasi standar platform Anda (container, pengguna khusus).
+
+`--sandbox` hanya memengaruhi server MCP; tidak berpengaruh tanpa `--mcp`.
 
 ## Konfigurasi Server MCP
 
@@ -113,6 +142,7 @@ Tool ini mengemas direktori kode lokal ke dalam file XML untuk analisis AI. Tool
 | `compress` | Tidak | `false` | Mengaktifkan kompresi Tree-sitter untuk mengekstrak signature kode esensial dan struktur sambil menghapus detail implementasi. Mengurangi penggunaan token sekitar 70% sambil mempertahankan makna semantik. Umumnya tidak diperlukan karena `grep_repomix_output` memungkinkan pengambilan konten incremental. |
 | `includePatterns` | Tidak | — | File yang akan disertakan menggunakan pola fast-glob. Dipisahkan koma (mis. `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Tidak | — | File tambahan yang akan dikecualikan menggunakan pola fast-glob. Dipisahkan koma (mis. `"test/**,*.spec.js"`). Melengkapi `.gitignore` dan eksklusi built-in. |
+| `outputPatterns` | Tidak | — | Level inklusi per-file, mencerminkan opsi config-file [`output.patterns`](./configuration.md). Sebuah array entri `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`. Pola yang cocok pertama menang; `directoryStructureOnly` diprioritaskan di atas `compress`, dan kecocokan tanpa flag apa pun memaksa konten penuh (berguna untuk mengecualikan file dari `compress` global). Menggantikan `output.patterns` apa pun dari `repomix.config.json` repository target. |
 | `topFilesLength` | Tidak | `10` | Jumlah file terbesar berdasarkan ukuran untuk ditampilkan dalam ringkasan metrik |
 | `style` | Tidak | `xml` | Gaya format output: `xml`, `markdown`, `json`, atau `plain` |
 
@@ -120,12 +150,18 @@ Tool ini mengemas direktori kode lokal ke dalam file XML untuk analisis AI. Tool
 ```json
 {
   "directory": "/path/to/your/project",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
+
+Dengan contoh di atas (di mana `compress: true` bertindak sebagai catch-all untuk file yang tidak cocok), file di bawah `src/core/` dipertahankan dengan konten penuh, file di bawah `docs/` hanya dicantumkan dalam struktur direktori, dan sisanya dikompresi.
 
 ### pack_remote_repository
 
@@ -139,6 +175,7 @@ Tool ini mengambil, mengkloning, dan mengemas repository GitHub ke dalam file XM
 | `compress` | Tidak | `false` | Mengaktifkan kompresi Tree-sitter untuk mengekstrak signature kode esensial dan struktur sambil menghapus detail implementasi. Mengurangi penggunaan token sekitar 70% sambil mempertahankan makna semantik. Umumnya tidak diperlukan karena `grep_repomix_output` memungkinkan pengambilan konten incremental. |
 | `includePatterns` | Tidak | — | File yang akan disertakan menggunakan pola fast-glob. Dipisahkan koma (mis. `"**/*.{js,ts}"`, `"src/**,docs/**"`) |
 | `ignorePatterns` | Tidak | — | File tambahan yang akan dikecualikan menggunakan pola fast-glob. Dipisahkan koma (mis. `"test/**,*.spec.js"`). Melengkapi `.gitignore` dan eksklusi built-in. |
+| `outputPatterns` | Tidak | — | Level inklusi per-file, mencerminkan opsi config-file [`output.patterns`](./configuration.md). Sebuah array entri `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }`. Pola yang cocok pertama menang; `directoryStructureOnly` diprioritaskan di atas `compress`, dan kecocokan tanpa flag apa pun memaksa konten penuh (berguna untuk mengecualikan file dari `compress` global). |
 | `topFilesLength` | Tidak | `10` | Jumlah file terbesar berdasarkan ukuran untuk ditampilkan dalam ringkasan metrik |
 | `style` | Tidak | `xml` | Gaya format output: `xml`, `markdown`, `json`, atau `plain` |
 
@@ -146,9 +183,13 @@ Tool ini mengambil, mengkloning, dan mengemas repository GitHub ke dalam file XM
 ```json
 {
   "remote": "yamadashy/repomix",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
@@ -168,7 +209,7 @@ Tool ini membaca konten file output yang dihasilkan oleh Repomix. Mendukung pemb
 **Fitur:**
 - Dirancang khusus untuk lingkungan berbasis web atau aplikasi sandbox
 - Mengambil konten output yang dihasilkan sebelumnya menggunakan ID mereka
-- Menyediakan akses aman ke codebase yang dikemas tanpa memerlukan akses filesystem
+- Menyediakan akses ke codebase yang dikemas tanpa memerlukan akses filesystem
 - Mendukung pembacaan parsial untuk file besar
 
 **Contoh:**
@@ -213,48 +254,35 @@ Tool ini mencari pola dalam file output Repomix menggunakan fungsionalitas mirip
 
 ### file_system_read_file dan file_system_read_directory
 
-Server MCP Repomix menyediakan dua tools filesystem yang memungkinkan asisten AI untuk berinteraksi dengan aman dengan filesystem lokal:
+Kedua tools filesystem ini hanya tersedia dalam [mode sandbox](#mode-sandbox) (`--sandbox`), di mana root workspace membatasi apa yang dapat mereka jangkau. Tanpa `--sandbox`, tools ini tidak didaftarkan.
 
 1. `file_system_read_file`
-  - Membaca konten file dari filesystem lokal menggunakan path absolut
-  - Termasuk validasi keamanan built-in untuk mendeteksi dan mencegah akses ke file yang berisi informasi sensitif
-  - Mengimplementasikan validasi keamanan menggunakan [Secretlint](https://github.com/secretlint/secretlint)
-  - Mencegah akses ke file yang berisi informasi sensitif (API keys, password, secrets)
-  - Memvalidasi path absolut untuk mencegah serangan directory traversal
-  - Mengembalikan pesan error yang jelas untuk path yang tidak valid dan masalah keamanan
+  - Membaca konten file pada path yang relatif terhadap root workspace (misalnya `src/index.ts`)
+  - Menolak konten yang cocok dengan format secret yang dikenal ([Secretlint](https://github.com/secretlint/secretlint)) sebagai pengaman heuristik tambahan; batas akses adalah root workspace, bukan pemindaian tersebut
+  - Mengembalikan pesan error yang jelas untuk path yang tidak valid, tanpa mengekspos path host
 
 2. `file_system_read_directory`
-  - Mendaftar konten direktori menggunakan path absolut
-  - Mengembalikan daftar berformat yang menampilkan file dan subdirektori dengan indikator yang jelas
+  - Mendaftar konten direktori pada path yang relatif terhadap root workspace (misalnya `.` atau `src`)
   - Menampilkan file dan direktori dengan indikator yang jelas (`[FILE]` atau `[DIR]`)
-  - Menyediakan navigasi direktori yang aman dengan penanganan error yang tepat
-  - Memvalidasi path dan memastikan mereka absolut
   - Berguna untuk mengeksplorasi struktur proyek dan memahami organisasi codebase
-
-Kedua tools menggabungkan tindakan keamanan yang kuat:
-- Validasi path absolut untuk mencegah serangan directory traversal
-- Pemeriksaan izin untuk memastikan hak akses yang tepat
-- Integrasi dengan Secretlint untuk deteksi informasi sensitif
-- Pesan error yang jelas untuk debugging dan kesadaran keamanan yang lebih baik
 
 **Contoh:**
 ```typescript
 // Membaca file
 const fileContent = await tools.file_system_read_file({
-  path: '/absolute/path/to/file.txt'
+  path: 'src/index.ts'
 });
 
 // Mendaftar konten direktori
 const dirContent = await tools.file_system_read_directory({
-  path: '/absolute/path/to/directory'
+  path: 'src'
 });
 ```
 
 Tools ini sangat berguna ketika asisten AI perlu:
-- Menganalisis file spesifik dalam codebase
+- Menganalisis file spesifik dalam workspace
 - Menavigasi struktur direktori
 - Memverifikasi eksistensi dan aksesibilitas file
-- Memastikan operasi filesystem yang aman
 
 ## Manfaat Menggunakan Repomix sebagai Server MCP
 

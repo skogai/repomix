@@ -1,15 +1,18 @@
 import path from 'node:path';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { runCli } from '../../cli/cliRun.js';
 import type { CliOptions } from '../../cli/types.js';
 import { defaultFilePathMap } from '../../config/configSchema.js';
+import { redactUrl } from '../../shared/urlRedact.js';
+import { withMcpProgress } from './mcpProgress.js';
 import {
   buildMcpToolErrorResponse,
   convertErrorToJson,
   createToolWorkspace,
   formatPackToolResponse,
+  outputPatternsSchema,
+  removeToolWorkspace,
+  runCliPreservingLogLevel,
 } from './mcpToolRuntime.js';
 
 const packRemoteRepositoryInputSchema = z.object({
@@ -36,6 +39,7 @@ const packRemoteRepositoryInputSchema = z.object({
     .describe(
       'Specify additional files to exclude using fast-glob patterns. Multiple patterns can be comma-separated (e.g., "test/**,*.spec.js", "node_modules/**,dist/**"). These patterns supplement .gitignore and built-in exclusions.',
     ),
+  outputPatterns: outputPatternsSchema,
   topFilesLength: z
     .number()
     .int()
@@ -61,13 +65,21 @@ const packRemoteRepositoryOutputSchema = z.object({
   totalTokens: z.number().describe('Total token count of the content'),
 });
 
-export const registerPackRemoteRepositoryTool = (mcpServer: McpServer) => {
+export const registerPackRemoteRepositoryTool = (
+  mcpServer: McpServer,
+  deps = {
+    createToolWorkspace,
+    formatPackToolResponse,
+    removeToolWorkspace,
+    runCliPreservingLogLevel,
+  },
+) => {
   mcpServer.registerTool(
     'pack_remote_repository',
     {
       title: 'Pack Remote Repository',
       description:
-        'Fetch, clone, and package a GitHub repository into a consolidated file for AI analysis. This tool automatically clones the remote repository, analyzes its structure, and generates a comprehensive report. Supports multiple output formats: XML (structured with <file> tags), Markdown (human-readable with ## headers and code blocks), JSON (machine-readable with files as key-value pairs), and Plain text (simple format with separators). Also supports various GitHub URL formats and includes security checks to prevent exposure of sensitive information.',
+        'Fetch, clone, and package a GitHub repository into a consolidated file for AI analysis. This tool automatically clones the remote repository, analyzes its structure, and generates a comprehensive report. Supports multiple output formats: XML (structured with <file> tags), Markdown (human-readable with ## headers and code blocks), JSON (machine-readable with files as key-value pairs), and Plain text (simple format with separators). Also supports various GitHub URL formats. Files matching known secret formats are excluded, but that scan is a heuristic, not an access boundary.',
       inputSchema: packRemoteRepositoryInputSchema,
       outputSchema: packRemoteRepositoryOutputSchema,
       annotations: {
@@ -77,27 +89,36 @@ export const registerPackRemoteRepositoryTool = (mcpServer: McpServer) => {
         openWorldHint: true,
       },
     },
-    async ({ remote, compress, includePatterns, ignorePatterns, topFilesLength, style }): Promise<CallToolResult> => {
+    async (
+      { remote, compress, includePatterns, ignorePatterns, outputPatterns, topFilesLength, style },
+      ctx,
+    ): Promise<CallToolResult> => {
       let tempDir = '';
+      // Fires on notifications/cancelled for this request or when the transport closes.
+      const signal = ctx?.mcpReq.signal;
 
       try {
-        tempDir = await createToolWorkspace();
-        const outputFileName = defaultFilePathMap[style as keyof typeof defaultFilePathMap];
+        tempDir = await deps.createToolWorkspace();
+        const outputFileName = defaultFilePathMap[style];
         const outputFilePath = path.join(tempDir, outputFileName);
 
-        const cliOptions = {
+        const cliOptions: CliOptions = {
           remote,
           compress,
           include: includePatterns,
           ignore: ignorePatterns,
+          outputPatterns,
           output: outputFilePath,
           style,
           securityCheck: true,
           topFilesLen: topFilesLength,
           quiet: true,
-        } as CliOptions;
+          signal,
+        };
 
-        const result = await runCli(['.'], process.cwd(), cliOptions);
+        const result = await withMcpProgress(ctx, { sandboxed: false }, (progressCallback) =>
+          deps.runCliPreservingLogLevel(['.'], process.cwd(), cliOptions, progressCallback),
+        );
         if (!result) {
           return buildMcpToolErrorResponse({
             errorMessage: 'Failed to return a result',
@@ -107,9 +128,21 @@ export const registerPackRemoteRepositoryTool = (mcpServer: McpServer) => {
         // Extract metrics information from the pack result
         const { packResult } = result;
 
-        return await formatPackToolResponse({ repository: remote }, packResult, outputFilePath, topFilesLength);
+        // The echoed repository is descriptive metadata only, so it is redacted:
+        // a credentialed remote would otherwise persist in the MCP transcript,
+        // the client's logs, and the model's context.
+        return await deps.formatPackToolResponse(
+          { repository: redactUrl(remote) },
+          packResult,
+          outputFilePath,
+          topFilesLength,
+        );
       } catch (error) {
         return buildMcpToolErrorResponse(convertErrorToJson(error));
+      } finally {
+        // The SDK never delivers a cancelled request's response, so nothing will read
+        // this workspace's output.
+        if (signal?.aborted && tempDir) await deps.removeToolWorkspace(tempDir);
       }
     },
   );

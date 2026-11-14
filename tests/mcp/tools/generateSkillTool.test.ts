@@ -1,28 +1,39 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { runCli } from '../../../src/cli/cliRun.js';
 import { registerGenerateSkillTool } from '../../../src/mcp/tools/generateSkillTool.js';
+import type { runCliPreservingLogLevel } from '../../../src/mcp/tools/mcpToolRuntime.js';
+import { createMcpServerDouble, type McpServerDouble } from '../../testing/mcpServerDoubles.js';
+import { createTempDir } from '../../testing/tempDir.js';
 import { createMockConfig } from '../../testing/testUtils.js';
 
-vi.mock('node:fs/promises');
-vi.mock('node:path');
-vi.mock('../../../src/cli/cliRun.js');
+const exists = (target: string) =>
+  fs.access(target).then(
+    () => true,
+    () => false,
+  );
 
 describe('GenerateSkillTool', () => {
-  const mockServer = {
-    registerTool: vi.fn().mockReturnThis(),
-  } as unknown as McpServer;
+  let mockServer: McpServerDouble;
 
-  let toolHandler: (args: {
-    directory: string;
-    skillName?: string;
-    compress?: boolean;
-    includePatterns?: string;
-    ignorePatterns?: string;
-  }) => Promise<CallToolResult>;
+  let toolHandler: (
+    args: {
+      directory: string;
+      skillName?: string;
+      compress?: boolean;
+      includePatterns?: string;
+      ignorePatterns?: string;
+    },
+    ctx?: unknown,
+  ) => Promise<CallToolResult>;
+
+  // Real temp workspace: the tool's directory checks and its claim/cleanup of the
+  // skill directory run against the file system. Only the pack itself is a double.
+  let tempDir: string;
+  let projectDir: string;
+  const skillDirOf = (name: string) => path.join(projectDir, '.claude', 'skills', name);
+  let runCli: ReturnType<typeof vi.fn<typeof runCliPreservingLogLevel>>;
 
   const defaultPackResult = {
     totalFiles: 10,
@@ -40,23 +51,18 @@ describe('GenerateSkillTool', () => {
     skippedFiles: [],
   };
 
-  beforeEach(() => {
-    vi.resetAllMocks();
-    registerGenerateSkillTool(mockServer);
-    toolHandler = (mockServer.registerTool as ReturnType<typeof vi.fn>).mock.calls[0][2];
+  beforeEach(async () => {
+    tempDir = await createTempDir('repomix-mcp-skill-');
+    projectDir = path.join(tempDir, 'project');
+    await fs.mkdir(projectDir);
 
-    // Default path mocks
-    vi.mocked(path.isAbsolute).mockReturnValue(true);
-    vi.mocked(path.join).mockImplementation((...args: string[]) => args.join('/'));
-    vi.mocked(path.basename).mockImplementation((p: string) => p.split('/').pop() || '');
-    vi.mocked(path.resolve).mockImplementation((...args: string[]) => args.join('/'));
-    vi.mocked(path.normalize).mockImplementation((p: string) => p);
-
-    // Default: directory doesn't exist (for skill dir check)
-    vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
+    runCli = vi.fn<typeof runCliPreservingLogLevel>();
+    mockServer = createMcpServerDouble();
+    registerGenerateSkillTool(mockServer.server, { runCliPreservingLogLevel: runCli });
+    toolHandler = mockServer.toolHandler();
 
     // Default runCli behavior
-    vi.mocked(runCli).mockImplementation(async (_directories, cwd, opts = {}) => ({
+    runCli.mockImplementation(async (_directories, cwd, opts = {}) => ({
       packResult: defaultPackResult,
       config: createMockConfig({
         cwd,
@@ -77,10 +83,8 @@ describe('GenerateSkillTool', () => {
   });
 
   test('should reject relative paths', async () => {
-    vi.mocked(path.isAbsolute).mockReturnValue(false);
-
     const result = await toolHandler({
-      directory: 'relative/path',
+      directory: path.join('relative', 'path'),
     });
 
     expect(result.isError).toBe(true);
@@ -91,11 +95,8 @@ describe('GenerateSkillTool', () => {
   });
 
   test('should reject non-normalized paths', async () => {
-    vi.mocked(path.isAbsolute).mockReturnValue(true);
-    vi.mocked(path.normalize).mockReturnValue('/test/project');
-
     const result = await toolHandler({
-      directory: '/test/../test/project',
+      directory: [tempDir, '..', path.basename(tempDir), 'project'].join(path.sep),
     });
 
     expect(result.isError).toBe(true);
@@ -103,16 +104,12 @@ describe('GenerateSkillTool', () => {
     expect(content.type).toBe('text');
     const parsedResult = JSON.parse((content as { type: 'text'; text: string }).text);
     expect(parsedResult.errorMessage).toContain('must be normalized');
-    expect(parsedResult.errorMessage).toContain('/test/project');
+    expect(parsedResult.errorMessage).toContain(projectDir);
   });
 
   test('should reject inaccessible directories', async () => {
-    vi.mocked(path.isAbsolute).mockReturnValue(true);
-    // First access check (directory) fails
-    vi.mocked(fs.access).mockRejectedValueOnce(new Error('ENOENT'));
-
     const result = await toolHandler({
-      directory: '/nonexistent/path',
+      directory: path.join(tempDir, 'nonexistent'),
     });
 
     expect(result.isError).toBe(true);
@@ -123,14 +120,12 @@ describe('GenerateSkillTool', () => {
   });
 
   test('should reject when skill directory already exists', async () => {
-    vi.mocked(path.isAbsolute).mockReturnValue(true);
-    // First access check (directory) succeeds
-    vi.mocked(fs.access)
-      .mockResolvedValueOnce(undefined) // Directory exists
-      .mockResolvedValueOnce(undefined); // Skill directory also exists
+    const skillDir = skillDirOf('existing-skill');
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(path.join(skillDir, 'SKILL.md'), 'existing');
 
     const result = await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
       skillName: 'existing-skill',
     });
 
@@ -139,93 +134,171 @@ describe('GenerateSkillTool', () => {
     expect(content.type).toBe('text');
     const parsedResult = JSON.parse((content as { type: 'text'; text: string }).text);
     expect(parsedResult.errorMessage).toContain('already exists');
+    expect(runCli).not.toHaveBeenCalled();
+    // The pre-existing skill is left untouched.
+    await expect(fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf8')).resolves.toBe('existing');
+  });
+
+  test("a concurrent same-name call is refused and never removes the first call's skill", async () => {
+    const skillDir = skillDirOf('shared-skill');
+    let releaseFirst: () => void = () => {};
+    let markFirstPacking: () => void = () => {};
+    const firstPacking = new Promise<void>((resolve) => {
+      markFirstPacking = resolve;
+    });
+    runCli.mockImplementationOnce(async (_directories, cwd, opts = {}) => {
+      markFirstPacking();
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), 'first');
+      return { packResult: defaultPackResult, config: createMockConfig({ cwd, skillGenerate: opts.skillGenerate }) };
+    });
+
+    const first = toolHandler({ directory: projectDir, skillName: 'shared-skill' });
+    // Wait until the first call has claimed the directory and is inside the pack.
+    await firstPacking;
+    const second = await toolHandler({ directory: projectDir, skillName: 'shared-skill' });
+    releaseFirst();
+    const firstResult = await first;
+
+    expect(second.isError).toBe(true);
+    expect((second.content[0] as { text: string }).text).toContain('already exists');
+    expect(firstResult.isError).toBeUndefined();
+    expect(runCli).toHaveBeenCalledTimes(1);
+    await expect(fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf8')).resolves.toBe('first');
+  });
+
+  test('removes the claimed skill directory only while empty when the run fails', async () => {
+    runCli.mockRejectedValueOnce(new Error('pack failed'));
+
+    const result = await toolHandler({ directory: projectDir, skillName: 'my-skill' });
+
+    expect(result.isError).toBe(true);
+    expect(runCli).toHaveBeenCalledWith(
+      ['.'],
+      projectDir,
+      expect.objectContaining({ skillDir: skillDirOf('my-skill') }),
+      undefined,
+    );
+    // The empty directory this call claimed is gone, so a retry is not refused.
+    expect(await exists(skillDirOf('my-skill'))).toBe(false);
+  });
+
+  test('keeps a written skill when an error is raised after writing', async () => {
+    const skillDir = skillDirOf('my-skill');
+    // Non-recursive cleanup: errors raised after the skill was written (e.g. an
+    // exceeded output.tokenBudget) must keep the written output.
+    runCli.mockImplementationOnce(async () => {
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), 'written');
+      throw new Error('Token budget exceeded');
+    });
+
+    const result = await toolHandler({ directory: projectDir, skillName: 'my-skill' });
+
+    expect(result.isError).toBe(true);
+    await expect(fs.readFile(path.join(skillDir, 'SKILL.md'), 'utf8')).resolves.toBe('written');
   });
 
   test('should generate skill with custom name', async () => {
-    vi.mocked(path.isAbsolute).mockReturnValue(true);
-    // First access check (directory) succeeds
-    vi.mocked(fs.access)
-      .mockResolvedValueOnce(undefined) // Directory exists
-      .mockRejectedValueOnce(new Error('ENOENT')); // Skill directory doesn't exist
-
     const result = await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
       skillName: 'my-custom-skill',
     });
 
     expect(result.isError).toBeUndefined();
     expect(runCli).toHaveBeenCalledWith(
       ['.'],
-      '/test/project',
+      projectDir,
       expect.objectContaining({
         skillGenerate: 'my-custom-skill',
         skillName: 'my-custom-skill',
-        skillDir: expect.stringContaining('my-custom-skill'),
+        skillDir: skillDirOf('my-custom-skill'),
       }),
+      undefined,
     );
   });
 
   test('should generate skill with auto-generated name', async () => {
-    vi.mocked(fs.access)
-      .mockResolvedValueOnce(undefined) // Directory exists
-      .mockRejectedValueOnce(new Error('ENOENT')); // Skill directory doesn't exist
-
     await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
     });
 
     expect(runCli).toHaveBeenCalledWith(
       ['.'],
-      '/test/project',
+      projectDir,
       expect.objectContaining({
         skillGenerate: 'repomix-reference-project',
         skillName: 'repomix-reference-project',
       }),
+      undefined,
     );
   });
 
   test('should pass compress option', async () => {
-    vi.mocked(fs.access).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('ENOENT'));
-
     await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
       compress: true,
     });
 
     expect(runCli).toHaveBeenCalledWith(
       ['.'],
-      '/test/project',
+      projectDir,
       expect.objectContaining({
         compress: true,
       }),
+      undefined,
     );
   });
 
   test('should pass include and ignore patterns', async () => {
-    vi.mocked(fs.access).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('ENOENT'));
-
     await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
       includePatterns: '**/*.ts',
       ignorePatterns: 'test/**',
     });
 
     expect(runCli).toHaveBeenCalledWith(
       ['.'],
-      '/test/project',
+      projectDir,
       expect.objectContaining({
         include: '**/*.ts',
         ignore: 'test/**',
       }),
+      undefined,
     );
   });
 
+  test('passes the request abort signal to runCli', async () => {
+    const { signal } = new AbortController();
+    await toolHandler({ directory: projectDir }, { mcpReq: { _meta: {}, notify: vi.fn(), signal } });
+
+    expect(runCli).toHaveBeenCalledWith(['.'], projectDir, expect.objectContaining({ signal }), undefined);
+    // A run that was not cancelled keeps the generated skill.
+    expect(await exists(skillDirOf('repomix-reference-project'))).toBe(true);
+  });
+
+  test('removes the partially generated skill directory when the request is cancelled', async () => {
+    const skillDir = skillDirOf('my-skill');
+    const controller = new AbortController();
+    runCli.mockImplementationOnce(async () => {
+      await fs.writeFile(path.join(skillDir, 'SKILL.md'), 'partial');
+      controller.abort();
+      throw controller.signal.reason;
+    });
+    await toolHandler(
+      { directory: projectDir, skillName: 'my-skill' },
+      { mcpReq: { _meta: {}, notify: vi.fn(), signal: controller.signal } },
+    );
+
+    expect(await exists(skillDir)).toBe(false);
+  });
+
   test('should handle CLI execution failure', async () => {
-    vi.mocked(fs.access).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('ENOENT'));
-    vi.mocked(runCli).mockResolvedValue(undefined);
+    runCli.mockResolvedValue(undefined);
 
     const result = await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
     });
 
     expect(result.isError).toBe(true);
@@ -236,11 +309,10 @@ describe('GenerateSkillTool', () => {
   });
 
   test('should handle general error', async () => {
-    vi.mocked(fs.access).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('ENOENT'));
-    vi.mocked(runCli).mockRejectedValue(new Error('Unexpected error'));
+    runCli.mockRejectedValue(new Error('Unexpected error'));
 
     const result = await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
     });
 
     expect(result.isError).toBe(true);
@@ -251,10 +323,8 @@ describe('GenerateSkillTool', () => {
   });
 
   test('should return success response with skill info', async () => {
-    vi.mocked(fs.access).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('ENOENT'));
-
     const result = await toolHandler({
-      directory: '/test/project',
+      directory: projectDir,
       skillName: 'test-skill',
     });
 

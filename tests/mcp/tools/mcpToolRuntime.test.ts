@@ -1,8 +1,11 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { runCli } from '../../../src/cli/cliRun.js';
+import type { CliOptions } from '../../../src/cli/types.js';
+import { PathScopeError } from '../../../src/mcp/pathScope.js';
+import { logger, repomixLogLevels } from '../../../src/shared/logger.js';
+import type { MockedDeps } from '../../testing/depsDoubles.js';
 
 // Type guard for structured content with result property
 function hasResult(obj: unknown): obj is { result: string } {
@@ -22,16 +25,41 @@ import {
   generateOutputId,
   getOutputFilePath,
   registerOutputFile,
+  runCliPreservingLogLevel,
+  sandboxErrorReason,
 } from '../../../src/mcp/tools/mcpToolRuntime.js';
-
-vi.mock('node:fs/promises');
-vi.mock('node:path');
-vi.mock('node:os');
-vi.mock('node:crypto');
+import { createTempDir } from '../../testing/tempDir.js';
+import { structuredContentOf } from '../../testing/testUtils.js';
 
 describe('mcpToolRuntime', () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
+  describe('sandboxErrorReason', () => {
+    const errnoError = (code: string) => Object.assign(new Error(`${code}: /host/secret/path`), { code });
+
+    it('should pass a PathScopeError message through unchanged', () => {
+      expect(sandboxErrorReason(new PathScopeError('path must be relative'))).toBe('path must be relative');
+    });
+
+    it.each([
+      ['ENOENT', 'not found'],
+      ['EACCES', 'permission denied'],
+      ['EPERM', 'permission denied'],
+      ['EISDIR', 'path is a directory'],
+      ['ENOTDIR', 'path is not a directory'],
+      ['ELOOP', 'too many symbolic links'],
+      ['ENAMETOOLONG', 'path name too long'],
+      ['EMFILE', 'too many open files'],
+      ['ENFILE', 'too many open files'],
+      ['EIO', 'operation failed'],
+    ])('should map %s to a reason without the host path', (code, reason) => {
+      expect(sandboxErrorReason(errnoError(code))).toBe(reason);
+    });
+
+    it.each([[new Error('boom')], ['string error'], [undefined]])(
+      'should fall back to a generic reason for %j',
+      (error) => {
+        expect(sandboxErrorReason(error)).toBe('operation failed');
+      },
+    );
   });
 
   describe('registerOutputFile and getOutputFilePath', () => {
@@ -52,28 +80,30 @@ describe('mcpToolRuntime', () => {
   });
 
   describe('createToolWorkspace', () => {
+    const tmpBaseDir = path.join('/tmp/repomix', 'mcp-outputs');
+    let deps: MockedDeps<NonNullable<Parameters<typeof createToolWorkspace>[0]>>;
+
     beforeEach(() => {
-      vi.mocked(os.tmpdir).mockReturnValue('/tmp');
-      vi.mocked(path.join).mockImplementation((...args) => args.join('/'));
-      vi.mocked(fs.mkdir).mockResolvedValue(undefined);
-      vi.mocked(fs.mkdtemp).mockResolvedValue('/tmp/repomix/mcp-outputs/temp-dir');
+      deps = {
+        getRepomixTmpDir: vi.fn().mockReturnValue('/tmp/repomix'),
+        mkdir: vi.fn().mockResolvedValue(undefined),
+        mkdtemp: vi.fn().mockResolvedValue('/tmp/repomix/mcp-outputs/temp-dir'),
+      };
     });
 
     it('should create a temporary directory for tool operations', async () => {
-      const tempDir = await createToolWorkspace();
+      const tempDir = await createToolWorkspace(deps);
 
-      expect(os.tmpdir).toHaveBeenCalled();
-      expect(path.join).toHaveBeenCalledWith('/tmp', 'repomix', 'mcp-outputs');
-      expect(fs.mkdir).toHaveBeenCalledWith('/tmp/repomix/mcp-outputs', { recursive: true });
-      expect(fs.mkdtemp).toHaveBeenCalledWith('/tmp/repomix/mcp-outputs/');
+      expect(deps.getRepomixTmpDir).toHaveBeenCalled();
+      expect(deps.mkdir).toHaveBeenCalledWith(tmpBaseDir, { recursive: true });
+      expect(deps.mkdtemp).toHaveBeenCalledWith(`${tmpBaseDir}/`);
       expect(tempDir).toBe('/tmp/repomix/mcp-outputs/temp-dir');
     });
 
     it('should throw an error if directory creation fails', async () => {
-      const error = new Error('Failed to create directory');
-      vi.mocked(fs.mkdir).mockRejectedValue(error);
+      deps.mkdir.mockRejectedValue(new Error('Failed to create directory'));
 
-      await expect(createToolWorkspace()).rejects.toThrow(
+      await expect(createToolWorkspace(deps)).rejects.toThrow(
         'Failed to create temporary directory: Failed to create directory',
       );
     });
@@ -81,23 +111,27 @@ describe('mcpToolRuntime', () => {
 
   describe('generateOutputId', () => {
     it('should generate a unique output ID', () => {
-      vi.mocked(crypto.randomBytes).mockImplementation(() => ({
-        toString: () => 'abcdef1234567890',
-      }));
+      const randomBytes = vi.fn().mockReturnValue({ toString: () => 'abcdef1234567890' });
 
-      const outputId = generateOutputId();
+      const outputId = generateOutputId({ randomBytes });
 
-      expect(crypto.randomBytes).toHaveBeenCalledWith(8);
+      expect(randomBytes).toHaveBeenCalledWith(8);
       expect(outputId).toBe('abcdef1234567890');
+    });
+
+    it('should encode 8 random bytes as 16 hex characters by default', () => {
+      expect(generateOutputId()).toMatch(/^[0-9a-f]{16}$/);
     });
   });
 
   describe('formatToolResponse', () => {
-    beforeEach(() => {
-      vi.mocked(crypto.randomBytes).mockImplementation(() => ({
-        toString: () => 'abcdef1234567890',
-      }));
-      vi.mocked(fs.readFile).mockResolvedValue('Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
+    let tempDir: string;
+    let outputFilePath: string;
+
+    beforeEach(async () => {
+      tempDir = await createTempDir('repomix-mcp-runtime-');
+      outputFilePath = path.join(tempDir, 'output.xml');
+      await fs.writeFile(outputFilePath, 'Line 1\nLine 2\nLine 3\nLine 4\nLine 5');
     });
 
     it('should format a tool response with directory context', async () => {
@@ -120,7 +154,6 @@ describe('mcpToolRuntime', () => {
         processedFiles: [],
         safeFilePaths: [],
       };
-      const outputFilePath = '/path/to/output.xml';
 
       const response = await formatPackToolResponse(context, metrics, outputFilePath);
 
@@ -137,7 +170,9 @@ describe('mcpToolRuntime', () => {
 
       const resultJson = JSON.parse(structuredContent.result);
       expect(resultJson.directory).toBe('/path/to/dir');
-      expect(resultJson.outputId).toBe('abcdef1234567890');
+      expect(resultJson.outputId).toMatch(/^[0-9a-f]{16}$/);
+      expect(resultJson.outputId).toBe(structuredContentOf(response).outputId);
+      expect(getOutputFilePath(resultJson.outputId)).toBe(outputFilePath);
       expect(resultJson.metrics.totalFiles).toBe(10);
       expect(resultJson.metrics.totalLines).toBe(5);
       expect(response).toHaveProperty('structuredContent');
@@ -164,7 +199,6 @@ describe('mcpToolRuntime', () => {
         processedFiles: [],
         safeFilePaths: [],
       };
-      const outputFilePath = '/path/to/output.xml';
 
       const response = await formatPackToolResponse(context, metrics, outputFilePath);
 
@@ -208,7 +242,6 @@ describe('mcpToolRuntime', () => {
         processedFiles: [],
         safeFilePaths: [],
       };
-      const outputFilePath = '/path/to/output.xml';
       const topFilesLen = 3;
 
       const response = await formatPackToolResponse(context, metrics, outputFilePath, topFilesLen);
@@ -227,6 +260,34 @@ describe('mcpToolRuntime', () => {
       expect(result.metrics.topFiles[1].path).toBe('file2.js');
       expect(result.metrics.topFiles[2].path).toBe('file3.js');
       expect(result.metrics.totalLines).toBe(5);
+    });
+
+    it('sandboxed scope omits host paths from the pack response', async () => {
+      const root = await createTempDir('iso-root-');
+      const outDir = await createTempDir('iso-out-');
+      const sandboxOutputFilePath = path.join(outDir, 'repomix-output.xml');
+      await fs.writeFile(sandboxOutputFilePath, '<files>\n<file path="src/a.ts">x</file>\n</files>\n');
+
+      const metrics = {
+        totalFiles: 1,
+        totalCharacters: 1,
+        totalTokens: 1,
+        fileCharCounts: { 'src/a.ts': 1 },
+        fileTokenCounts: { 'src/a.ts': 1 },
+        processedFiles: [],
+        safeFilePaths: ['src/a.ts'],
+      };
+
+      const result = await formatPackToolResponse({ directory: root }, metrics, sandboxOutputFilePath, 5, false, {
+        sandboxed: true,
+        root,
+      });
+
+      const text = JSON.stringify(result);
+      expect(text).not.toContain(root); // no host workspace path
+      expect(text).not.toContain(outDir); // no host output path
+      expect(structuredContentOf(result).outputFilePath).toBe('');
+      expect(structuredContentOf(result).description).not.toContain('read the file directly using path');
     });
   });
 
@@ -333,6 +394,99 @@ describe('mcpToolRuntime', () => {
         ],
         structuredContent: errorContent,
       });
+    });
+  });
+
+  describe('runCliPreservingLogLevel', () => {
+    const cliOptions = {} as CliOptions;
+    // The CLI is only observed here: runCli itself owns the log level the wrapper protects.
+    let runCliMock: ReturnType<typeof vi.fn<typeof runCli>>;
+    const run = (...args: Parameters<typeof runCliPreservingLogLevel>) =>
+      runCliPreservingLogLevel(args[0], args[1], args[2], args[3], { runCli: runCliMock });
+
+    beforeEach(() => {
+      runCliMock = vi.fn<typeof runCli>();
+    });
+
+    const deferred = () => {
+      let release = (): void => {};
+      const promise = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { promise, resolve: () => release() };
+    };
+
+    const cliSilencesTheLogger = () => {
+      runCliMock.mockImplementation(async () => {
+        // What runCli does for { quiet: true } / stdout mode: repoint the shared
+        // singleton and leave it there.
+        logger.setLogLevel(repomixLogLevels.SILENT);
+        return undefined;
+      });
+    };
+
+    it('should restore the log level the CLI overwrote for a quiet pack', async () => {
+      logger.setLogLevel(repomixLogLevels.DEBUG);
+      cliSilencesTheLogger();
+
+      await run(['.'], '/repo', cliOptions);
+
+      expect(logger.getLogLevel()).toBe(repomixLogLevels.DEBUG);
+    });
+
+    it('should restore the log level when the pack fails', async () => {
+      logger.setLogLevel(repomixLogLevels.INFO);
+      runCliMock.mockImplementation(async () => {
+        logger.setLogLevel(repomixLogLevels.SILENT);
+        throw new Error('pack failed');
+      });
+
+      await expect(run(['.'], '/repo', cliOptions)).rejects.toThrow('pack failed');
+
+      expect(logger.getLogLevel()).toBe(repomixLogLevels.INFO);
+    });
+
+    it('should restore the level only when the last overlapping pack finishes', async () => {
+      // The MCP SDK does not wait for a running tool handler before starting the next
+      // one, so two quiet packs genuinely overlap.
+      logger.setLogLevel(repomixLogLevels.DEBUG);
+      const gates = [deferred(), deferred()];
+      let started = 0;
+      runCliMock.mockImplementation(async () => {
+        const gate = gates[started++];
+        logger.setLogLevel(repomixLogLevels.SILENT);
+        await gate.promise;
+        return undefined;
+      });
+
+      const first = run(['.'], '/repo', cliOptions);
+      const second = run(['.'], '/repo', cliOptions);
+
+      expect(logger.getLogLevel()).toBe(repomixLogLevels.SILENT);
+
+      gates[0].resolve();
+      await first;
+      expect(logger.getLogLevel()).toBe(repomixLogLevels.SILENT);
+
+      gates[1].resolve();
+      await second;
+      expect(logger.getLogLevel()).toBe(repomixLogLevels.DEBUG);
+    });
+
+    it('should pass the CLI result straight through', async () => {
+      const cliResult = { packResult: {}, config: {} } as unknown as Awaited<ReturnType<typeof runCli>>;
+      runCliMock.mockResolvedValue(cliResult);
+
+      await expect(run(['.'], '/repo', cliOptions)).resolves.toBe(cliResult);
+    });
+
+    it('should forward directories, cwd, options and the progress callback to the CLI', async () => {
+      cliSilencesTheLogger();
+      const progressCallback = vi.fn();
+
+      await run(['/a', '/b'], '/cwd', cliOptions, progressCallback);
+
+      expect(runCliMock).toHaveBeenCalledWith(['/a', '/b'], '/cwd', cliOptions, progressCallback);
     });
   });
 });

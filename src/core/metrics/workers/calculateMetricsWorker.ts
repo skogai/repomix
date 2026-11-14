@@ -6,8 +6,9 @@ import { freeTokenCounters, getTokenCounter } from '../tokenCounterFactory.js';
  * Token counting worker for metrics calculation.
  *
  * Supports both single-content and batch modes. Batch mode reduces IPC overhead
- * by processing multiple files per worker round-trip (~0.5ms overhead per round-trip).
- * For 991 files, batching with size 10 reduces round-trips from 991 to ~100.
+ * by processing multiple files per worker round-trip (~2ms minimum per round-trip,
+ * dominated by tinypool serialization and dispatch).
+ * For ~1000 files, batching with size 50 reduces round-trips from ~1000 to ~20.
  */
 
 // Initialize logger configuration from workerData at module load time
@@ -33,11 +34,11 @@ export interface TokenCountBatchTask {
 export type MetricsWorkerTask = TokenCountTask | TokenCountBatchTask;
 export type MetricsWorkerResult = number | number[];
 
-export const countTokens = async (task: TokenCountTask): Promise<number> => {
+export const countTokens = async (task: TokenCountTask, deps = { getTokenCounter }): Promise<number> => {
   const processStartAt = process.hrtime.bigint();
 
   try {
-    const counter = await getTokenCounter(task.encoding);
+    const counter = await deps.getTokenCounter(task.encoding);
     const tokenCount = counter.countTokens(task.content, task.path);
 
     logger.trace(`Counted tokens. Count: ${tokenCount}. Took: ${getProcessDuration(processStartAt)}ms`);
@@ -48,11 +49,11 @@ export const countTokens = async (task: TokenCountTask): Promise<number> => {
   }
 };
 
-const countTokensBatch = async (task: TokenCountBatchTask): Promise<number[]> => {
+const countTokensBatch = async (task: TokenCountBatchTask, deps = { getTokenCounter }): Promise<number[]> => {
   const processStartAt = process.hrtime.bigint();
 
   try {
-    const counter = await getTokenCounter(task.encoding);
+    const counter = await deps.getTokenCounter(task.encoding);
     const results = task.items.map((item) => counter.countTokens(item.content, item.path));
 
     logger.trace(`Counted tokens for ${task.items.length} items. Took: ${getProcessDuration(processStartAt)}ms`);
@@ -68,11 +69,12 @@ const getProcessDuration = (startTime: bigint): string => {
   return (Number(endTime - startTime) / 1e6).toFixed(2);
 };
 
-export default async (task: MetricsWorkerTask): Promise<MetricsWorkerResult> => {
+// Tinypool invokes the handler with the task only; `deps` is for tests.
+export default async (task: MetricsWorkerTask, deps = { getTokenCounter }): Promise<MetricsWorkerResult> => {
   if ('items' in task) {
-    return countTokensBatch(task);
+    return countTokensBatch(task, deps);
   }
-  return countTokens(task);
+  return countTokens(task, deps);
 };
 
 // Export cleanup function for Tinypool teardown

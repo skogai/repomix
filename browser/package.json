@@ -10,14 +10,14 @@
     "build:chrome": "wxt build -b chrome",
     "build:firefox": "wxt build -b firefox",
     "build:edge": "wxt build -b edge",
-    "build-all": "npm run build:chrome && npm run build:firefox && npm run build:edge",
+    "build-all": "node --run build:chrome && node --run build:firefox && node --run build:edge",
     "zip": "wxt zip",
     "zip:chrome": "wxt zip -b chrome",
     "zip:firefox": "wxt zip -b firefox",
     "zip:edge": "wxt zip -b edge",
     "generate-icons": "tsx scripts/generate-icons.ts",
-    "lint": "npm run lint-tsc",
-    "lint-tsc": "tsgo --noEmit",
+    "lint": "node --run lint-tsc",
+    "lint-tsc": "tsc --noEmit",
     "test": "vitest",
     "archive": "git archive HEAD -o ./storage/source.zip"
   },
@@ -33,15 +33,14 @@
   "author": "yamadashy",
   "license": "MIT",
   "devDependencies": {
-    "@types/chrome": "^0.1.40",
-    "@types/node": "^24.12.2",
-    "@typescript/native-preview": "^7.0.0-dev.20260417.1",
-    "jsdom": "^29.0.2",
-    "sharp": "^0.34.5",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.4",
-    "wxt": "^0.20.24"
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "jsdom": "^31.0.0",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0",
+    "wxt": "^0.21.5"
   },
   "engines": {
     "node": ">=24.0.1"

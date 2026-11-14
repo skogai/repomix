@@ -22,6 +22,7 @@ export const configEnUs = defineConfig({
             { text: 'Basic Usage', link: '/guide/usage' },
             { text: 'Prompt Examples', link: '/guide/prompt-examples' },
             { text: 'Use Cases', link: '/guide/use-cases' },
+            { text: 'FAQ and Troubleshooting', link: '/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configEnUs = defineConfig({
           items: [
             { text: 'Output Formats', link: '/guide/output' },
             { text: 'Command Line Options', link: '/guide/command-line-options' },
+            { text: 'Watch Mode', link: '/guide/watch-mode' },
             { text: 'Configuration', link: '/guide/configuration' },
             { text: 'Custom Instructions', link: '/guide/custom-instructions' },
             { text: 'GitHub Repository Processing', link: '/guide/remote-repository-processing' },

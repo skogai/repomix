@@ -2,7 +2,9 @@ import { describe, expect, test } from 'vitest';
 import {
   type FilesByRoot,
   generateTreeString,
+  generateTreeStringWithLineCounts,
   generateTreeStringWithRoots,
+  generateTreeStringWithRootsAndLineCounts,
 } from '../../../src/core/file/fileTreeGenerate.js';
 
 describe('fileTreeGenerate', () => {
@@ -15,6 +17,16 @@ describe('fileTreeGenerate', () => {
       expect(result).toContain('file2.txt');
       expect(result).toContain('subdir/');
       expect(result).toContain('nested.txt');
+    });
+
+    // globby/buildFileDisplayPath always hand out "/"-separated paths, even on Windows
+    // where path.sep is "\\". Backslash input here stands in for that separator/path.sep
+    // mismatch: the tree must nest by path segment regardless of the OS separator.
+    test('nests paths independently of the OS separator', () => {
+      const files = ['src\\index.ts', 'src\\utils\\helper.ts'];
+      const result = generateTreeString(files);
+
+      expect(result).toBe('src/\n  utils/\n    helper.ts\n  index.ts');
     });
   });
 
@@ -85,6 +97,40 @@ describe('fileTreeGenerate', () => {
 
       // Should be identical
       expect(singleRootResult).toBe(standardResult);
+    });
+  });
+
+  describe('generateTreeStringWithRootsAndLineCounts', () => {
+    test('matches generateTreeStringWithLineCounts for a single root', () => {
+      const files = ['src/index.ts', 'README.md'];
+      const lineCounts = { 'src/index.ts': 10, 'README.md': 3 };
+      const filesByRoot: FilesByRoot[] = [{ rootLabel: 'project', files }];
+
+      expect(generateTreeStringWithRootsAndLineCounts(filesByRoot, lineCounts)).toBe(
+        generateTreeStringWithLineCounts(files, lineCounts),
+      );
+    });
+
+    test('labels each root and looks up line counts by root-prefixed path', () => {
+      const filesByRoot: FilesByRoot[] = [
+        { rootLabel: 'app', files: ['README.md', 'src/index.ts'] },
+        { rootLabel: 'packages/lib', files: ['README.md'] },
+      ];
+      const lineCounts = { 'app/README.md': 3, 'app/src/index.ts': 10, 'packages/lib/README.md': 7 };
+
+      const result = generateTreeStringWithRootsAndLineCounts(filesByRoot, lineCounts);
+
+      expect(result).toBe(
+        [
+          '[app]/',
+          '  src/',
+          '    index.ts (10 lines)',
+          '  README.md (3 lines)',
+          '',
+          '[packages/lib]/',
+          '  README.md (7 lines)',
+        ].join('\n'),
+      );
     });
   });
 });

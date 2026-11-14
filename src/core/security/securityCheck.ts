@@ -8,15 +8,9 @@ import type { RepomixProgressCallback } from '../../shared/types.js';
 import type { RawFile } from '../file/fileTypes.js';
 import type { GitDiffResult } from '../git/gitDiffHandle.js';
 import type { GitLogResult } from '../git/gitLogHandle.js';
-import type { SecurityCheckItem, SecurityCheckTask, SecurityCheckType } from './workers/securityCheckWorker.js';
+import type { SecurityCheckItem, SecurityCheckTask, SuspiciousFileResult } from './workers/securityCheckWorker.js';
 
-export type { SecurityCheckType } from './workers/securityCheckWorker.js';
-
-export interface SuspiciousFileResult {
-  filePath: string;
-  messages: string[];
-  type: SecurityCheckType;
-}
+export type { SecurityCheckType, SuspiciousFileResult } from './workers/securityCheckWorker.js';
 
 // Batch size for grouping files into worker tasks to reduce IPC overhead.
 // Each batch is sent as a single message to a worker thread, avoiding
@@ -36,6 +30,7 @@ export const runSecurityCheck = async (
     initTaskRunner,
     getProcessConcurrency: defaultGetProcessConcurrency,
   },
+  signal?: AbortSignal,
 ): Promise<SuspiciousFileResult[]> => {
   const gitDiffItems: SecurityCheckItem[] = [];
   const gitLogItems: SecurityCheckItem[] = [];
@@ -95,6 +90,7 @@ export const runSecurityCheck = async (
     workerType: 'securityCheck',
     runtime: 'worker_threads',
     maxWorkerThreads: maxSecurityWorkers,
+    signal,
   });
 
   // Split items into batches to reduce IPC round-trips

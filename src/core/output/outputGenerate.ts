@@ -8,6 +8,7 @@ import { type FilesByRoot, generateTreeString, generateTreeStringWithRoots } fro
 import type { ProcessedFile } from '../file/fileTypes.js';
 import type { GitDiffResult } from '../git/gitDiffHandle.js';
 import type { GitLogResult } from '../git/gitLogHandle.js';
+import { buildFileDisplayPath } from '../packager/rootDisplayPath.js';
 import type { OutputGeneratorContext, RenderContext } from './outputGeneratorTypes.js';
 import { sortOutputFiles } from './outputSort.js';
 import {
@@ -51,9 +52,14 @@ const getCompiledTemplate = (style: string): Handlebars.TemplateDelegate => {
   return compiled;
 };
 
-const calculateMarkdownDelimiter = (files: ReadonlyArray<ProcessedFile>): string => {
-  const maxBackticks = files
-    .flatMap((file) => file.content.match(/`+/g) ?? [])
+// The Markdown template wraps file contents, the directory structure, and git
+// diffs in the same code fence, so the delimiter has to be longer than the
+// longest backtick run across all of them. A diff of a Markdown file, for
+// example, carries bare ``` context lines that would otherwise close the fence
+// early and corrupt the output.
+const calculateMarkdownDelimiter = (contents: ReadonlyArray<string | undefined>): string => {
+  const maxBackticks = contents
+    .flatMap((content) => content?.match(/`+/g) ?? [])
     .reduce((max, match) => Math.max(max, match.length), 0);
   return '`'.repeat(Math.max(3, maxBackticks + 1));
 };
@@ -94,7 +100,12 @@ export const createRenderContext = (outputGeneratorContext: OutputGeneratorConte
     directoryStructureEnabled: outputGeneratorContext.config.output.directoryStructure,
     filesEnabled: outputGeneratorContext.config.output.files,
     escapeFileContent: outputGeneratorContext.config.output.parsableStyle,
-    markdownCodeBlockDelimiter: calculateMarkdownDelimiter(outputGeneratorContext.processedFiles),
+    markdownCodeBlockDelimiter: calculateMarkdownDelimiter([
+      ...outputGeneratorContext.processedFiles.map((file) => file.content),
+      outputGeneratorContext.treeString,
+      outputGeneratorContext.gitDiffResult?.workTreeDiffContent,
+      outputGeneratorContext.gitDiffResult?.stagedDiffContent,
+    ]),
     gitDiffEnabled: outputGeneratorContext.config.output.git?.includeDiffs,
     gitDiffWorkTree: outputGeneratorContext.gitDiffResult?.workTreeDiffContent,
     gitDiffStaged: outputGeneratorContext.gitDiffResult?.stagedDiffContent,
@@ -334,6 +345,19 @@ export const buildOutputGeneratorContext = async (
   let directoryPathsForTree: string[] = [];
   let filePathsForTree: string[] = allFilePaths;
 
+  // Only prefix with the per-root label for genuine multi-root packs. For a single
+  // root, filePathsByRoot still carries a basename fallback label, but pack() leaves
+  // single-root file paths unprefixed — so prefixing the full-tree directories here
+  // would desync them from the included files and add a spurious root branch.
+  const toOutputDisplayPath = (rootDir: string, filePath: string, index: number): string =>
+    buildFileDisplayPath({
+      rootDir,
+      filePath,
+      cwd: config.cwd,
+      filePathStyle: config.output.filePathStyle,
+      rootLabel: rootDirs.length > 1 ? filePathsByRoot?.[index]?.rootLabel : undefined,
+    });
+
   if (shouldUseFullTree) {
     try {
       // Collect all directories and all files from all roots
@@ -343,8 +367,24 @@ export const buildOutputGeneratorContext = async (
       ]);
 
       // Merge, deduplicate, and sort for deterministic output
-      const allDirectories = Array.from(new Set(allDirectoriesByRoot.flat())).sort();
-      const allRepoFiles = Array.from(new Set(allFilesByRoot.flat()));
+      const allDirectories = Array.from(
+        new Set(
+          allDirectoriesByRoot.flatMap((directories, index) => {
+            const rootDir = rootDirs[index];
+            if (!rootDir) return [];
+            return directories.map((directoryPath) => toOutputDisplayPath(rootDir, directoryPath, index));
+          }),
+        ),
+      ).sort();
+      const allRepoFiles = Array.from(
+        new Set(
+          allFilesByRoot.flatMap((files, index) => {
+            const rootDir = rootDirs[index];
+            if (!rootDir) return [];
+            return files.map((filePath) => toOutputDisplayPath(rootDir, filePath, index));
+          }),
+        ),
+      );
 
       // Merge in any files that weren't part of the included files so they appear in the tree
       const includedSet = new Set(allFilePaths);
@@ -367,7 +407,11 @@ export const buildOutputGeneratorContext = async (
     } else {
       try {
         const results = await Promise.all(rootDirs.map((rootDir) => deps.searchFiles(rootDir, config)));
-        const merged = results.flatMap((r) => r.emptyDirPaths);
+        const merged = results.flatMap((result, index) => {
+          const rootDir = rootDirs[index];
+          if (!rootDir) return [];
+          return result.emptyDirPaths.map((emptyDirPath) => toOutputDisplayPath(rootDir, emptyDirPath, index));
+        });
         directoryPathsForTree = [...new Set(merged)].sort();
       } catch (error) {
         throw new RepomixError(
@@ -381,7 +425,13 @@ export const buildOutputGeneratorContext = async (
   // Generate tree string - use multi-root format if filePathsByRoot is provided
   // generateTreeStringWithRoots handles single root case internally
   let treeString: string;
-  if (filePathsByRoot) {
+  if (shouldUseFullTree) {
+    // Full-tree mode already merged every repo file (included + the rest) and every
+    // directory into filePathsForTree/directoryPathsForTree above. Render those directly:
+    // filePathsByRoot only carries the included files, so it would drop the non-included
+    // ones and defeat the purpose of --include-full-directory-structure.
+    treeString = generateTreeString(filePathsForTree, directoryPathsForTree);
+  } else if (filePathsByRoot) {
     treeString = generateTreeStringWithRoots(filePathsByRoot, directoryPathsForTree);
   } else {
     // Fallback for when root info is not available

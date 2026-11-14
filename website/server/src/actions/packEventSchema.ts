@@ -8,12 +8,13 @@ import { MESSAGES } from './packRequestMessages.js';
 // `pack_requests` metric will silently mislabel rows.
 //
 // Named `pack_completed` as a lifecycle event — it covers all pack-request
-// terminal outcomes (success / validation_error / pack_error / rate_limited),
-// not just successful packs. The alternative of per-outcome event names would
-// require N metric filters instead of one filter + outcome label.
+// terminal outcomes (success / validation_error / pack_error / rate_limited /
+// turnstile_failed), not just successful packs. The alternative of per-outcome
+// event names would require N metric filters instead of one filter + outcome
+// label.
 export const PACK_EVENT = 'pack_completed';
 
-export type PackOutcome = 'success' | 'validation_error' | 'pack_error' | 'rate_limited';
+export type PackOutcome = 'success' | 'validation_error' | 'pack_error' | 'rate_limited' | 'turnstile_failed';
 
 // Extract a stable `repoHost` label for log-based metrics (e.g. 'github.com',
 // 'gitlab.com', 'upload'). Repomix accepts shorthand like 'owner/repo' which
@@ -56,6 +57,7 @@ const MESSAGE_TO_REASON: Record<string, string> = {
   [MESSAGES.FILE_TOO_LARGE]: 'file_too_large',
   [MESSAGES.INVALID_IGNORE_CHARS]: 'invalid_ignore_chars',
   [MESSAGES.INCLUDE_TOO_LONG]: 'include_too_long',
+  [MESSAGES.INCLUDE_TOO_NESTED]: 'include_too_nested',
   [MESSAGES.IGNORE_TOO_LONG]: 'ignore_too_long',
 };
 

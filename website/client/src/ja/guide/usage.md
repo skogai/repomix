@@ -1,3 +1,8 @@
+---
+title: 基本的な使い方
+description: Repomix CLIでディレクトリ、リモートリポジトリ、選択ファイル、git diff、コミットログ、分割出力、トークン数、圧縮コードを扱う基本操作を説明します。
+---
+
 # 基本的な使い方
 
 ## クイックスタート
@@ -50,6 +55,9 @@ repomix --remote https://github.com/user/repo
 
 # ショートハンドを使用
 repomix --remote user/repo
+
+# --remote なしでショートハンドを使用（自動検出）
+repomix user/repo
 
 # 特定のブランチ/タグ/コミット
 repomix --remote user/repo --remote-branch main

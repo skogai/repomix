@@ -6,10 +6,22 @@ import {
   repomixConfigDefaultSchema,
   repomixConfigFileSchema,
   repomixConfigMergedSchema,
+  repomixOutputFilePathStyleSchema,
   repomixOutputStyleSchema,
 } from '../../src/config/configSchema.js';
 
 describe('configSchema', () => {
+  describe('repomixOutputFilePathStyleSchema', () => {
+    it('should accept valid file path styles', () => {
+      expect(v.parse(repomixOutputFilePathStyleSchema, 'target-relative')).toBe('target-relative');
+      expect(v.parse(repomixOutputFilePathStyleSchema, 'cwd-relative')).toBe('cwd-relative');
+    });
+
+    it('should reject invalid file path styles', () => {
+      expect(() => v.parse(repomixOutputFilePathStyleSchema, 'absolute')).toThrow(v.ValiError);
+    });
+  });
+
   describe('repomixOutputStyleSchema', () => {
     it('should accept valid output styles', () => {
       expect(v.parse(repomixOutputStyleSchema, 'plain')).toBe('plain');
@@ -56,12 +68,81 @@ describe('configSchema', () => {
     });
   });
 
+  describe('output.patterns inclusion level', () => {
+    it('should accept patterns with compress and directoryStructureOnly flags', () => {
+      const configWithPatterns = {
+        output: {
+          patterns: [
+            { pattern: 'docs/**/*', compress: true },
+            { pattern: 'website/**/*', directoryStructureOnly: true },
+          ],
+        },
+      };
+      expect(v.parse(repomixConfigBaseSchema, configWithPatterns)).toEqual(configWithPatterns);
+    });
+
+    it('should accept a pattern entry with only the required pattern field', () => {
+      const configWithPattern = {
+        output: {
+          patterns: [{ pattern: 'src/**/*' }],
+        },
+      };
+      expect(v.parse(repomixConfigBaseSchema, configWithPattern)).toEqual(configWithPattern);
+    });
+
+    it('should reject a pattern entry missing the pattern field', () => {
+      const invalidConfig = {
+        output: {
+          patterns: [{ compress: true }],
+        },
+      };
+      expect(() => v.parse(repomixConfigBaseSchema, invalidConfig)).toThrow(v.ValiError);
+    });
+
+    it('should reject a non-string pattern', () => {
+      const invalidConfig = {
+        output: {
+          patterns: [{ pattern: 123 }],
+        },
+      };
+      expect(() => v.parse(repomixConfigBaseSchema, invalidConfig)).toThrow(v.ValiError);
+    });
+
+    it('should reject a non-boolean compress flag', () => {
+      const invalidConfig = {
+        output: {
+          patterns: [{ pattern: 'docs/**/*', compress: 'yes' }],
+        },
+      };
+      expect(() => v.parse(repomixConfigBaseSchema, invalidConfig)).toThrow(v.ValiError);
+    });
+
+    it('should reject a non-boolean directoryStructureOnly flag', () => {
+      const invalidConfig = {
+        output: {
+          patterns: [{ pattern: 'docs/**/*', directoryStructureOnly: 'yes' }],
+        },
+      };
+      expect(() => v.parse(repomixConfigBaseSchema, invalidConfig)).toThrow(v.ValiError);
+    });
+
+    it('should reject patterns that is not an array', () => {
+      const invalidConfig = {
+        output: {
+          patterns: 'docs/**/*',
+        },
+      };
+      expect(() => v.parse(repomixConfigBaseSchema, invalidConfig)).toThrow(v.ValiError);
+    });
+  });
+
   describe('repomixConfigBaseSchema', () => {
     it('should accept valid base config', () => {
       const validConfig = {
         output: {
           filePath: 'output.txt',
           style: 'plain',
+          filePathStyle: 'cwd-relative',
           removeComments: true,
           tokenCountTree: true,
         },
@@ -102,6 +183,7 @@ describe('configSchema', () => {
         output: {
           filePath: 'output.txt',
           style: 'plain',
+          filePathStyle: 'target-relative',
           parsableStyle: false,
           fileSummary: true,
           directoryStructure: true,
@@ -165,6 +247,7 @@ describe('configSchema', () => {
         output: {
           filePath: 'output.xml',
           style: 'xml',
+          filePathStyle: 'target-relative',
           parsableStyle: false,
           fileSummary: true,
           directoryStructure: true,
@@ -298,6 +381,27 @@ describe('configSchema', () => {
       };
       expect(v.parse(repomixConfigFileSchema, partialConfig)).toEqual(partialConfig);
     });
+
+    it('should accept input.processors', () => {
+      const config = {
+        input: {
+          processors: [{ pattern: '**/*.json', command: 'toon {file}', timeout: 30000, onError: 'skip' }],
+        },
+      };
+      expect(v.parse(repomixConfigFileSchema, config)).toEqual(config);
+    });
+
+    it('should strip enableFileProcessors so a config file cannot open the gate', () => {
+      // The gate is a CLI-only field; a file config must never be able to enable
+      // arbitrary command execution for MCP/website/library callers.
+      const config = {
+        enableFileProcessors: true,
+        input: { processors: [{ pattern: '**/*', command: 'evil {file}' }] },
+      };
+      const parsed = v.parse(repomixConfigFileSchema, config) as Record<string, unknown>;
+      expect(parsed.enableFileProcessors).toBeUndefined();
+      expect(parsed.input).toEqual(config.input);
+    });
   });
 
   describe('repomixConfigCliSchema', () => {
@@ -347,6 +451,7 @@ describe('configSchema', () => {
         output: {
           filePath: 'merged-output.txt',
           style: 'plain',
+          filePathStyle: 'target-relative',
           parsableStyle: false,
           fileSummary: true,
           directoryStructure: true,
@@ -429,6 +534,7 @@ describe('configSchema', () => {
         output: {
           filePath: 'output.xml',
           style: 'xml',
+          filePathStyle: 'target-relative',
           parsableStyle: false,
           fileSummary: true,
           directoryStructure: true,
@@ -451,8 +557,8 @@ describe('configSchema', () => {
             includeLogsCount: 50,
           },
         },
-        include: [],
-        ignore: { useGitignore: true, useDotIgnore: true, useDefaultPatterns: true, customPatterns: [] },
+        include: [] as string[],
+        ignore: { useGitignore: true, useDotIgnore: true, useDefaultPatterns: true, customPatterns: [] as string[] },
         security: { enableSecurityCheck: true },
         tokenCount: { encoding: 'o200k_base' },
         skillGenerate: 'my-skill',

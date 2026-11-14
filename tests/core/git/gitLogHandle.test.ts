@@ -8,12 +8,11 @@ import {
 } from '../../../src/core/git/gitLogHandle.js';
 import { RepomixError } from '../../../src/shared/errorHandle.js';
 import { logger } from '../../../src/shared/logger.js';
-
-vi.mock('../../../src/shared/logger');
+import { silenceLogger } from '../../testing/loggerDoubles.js';
 
 describe('gitLogHandle', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    silenceLogger();
   });
 
   describe('getGitLog', () => {

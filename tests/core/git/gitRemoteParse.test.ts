@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import {
   isExplicitRemoteUrl,
   isGitHubRepository,
@@ -6,15 +6,33 @@ import {
   parseRemoteValue,
 } from '../../../src/core/git/gitRemoteParse.js';
 import { isValidRemoteValue } from '../../../src/index.js';
-
-vi.mock('../../../src/shared/logger');
+import { silenceLogger } from '../../testing/loggerDoubles.js';
 
 describe('remoteAction functions', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    silenceLogger();
   });
 
   describe('parseRemoteValue', () => {
+    test('refuses a cloud metadata endpoint before any git command runs', () => {
+      // Through MCP an agent picks the URL, so an injected instruction could aim a
+      // clone at an address the user never asked for.
+      expect(() => parseRemoteValue('http://169.254.169.254/latest/meta-data')).toThrow(/metadata endpoint/);
+    });
+
+    test('still allows a self-hosted remote on a private network', () => {
+      // RFC1918 is deliberately not blocked: internal GitLab/Gitea/GHE is normal.
+      expect(parseRemoteValue('http://10.0.0.5/team/repo.git').repoUrl).toBe('http://10.0.0.5/team/repo.git');
+    });
+
+    test('refuses a userless scp-like metadata host one way or another', () => {
+      // host:path with no user@ is not matched by the scp host extractor; today the
+      // form is rejected as an invalid remote before any host check. This test pins
+      // that it keeps throwing — if userless scp-like support is ever added, the
+      // normalized-URL metadata check must catch it instead.
+      expect(() => parseRemoteValue('169.254.169.254:owner/repo')).toThrow();
+    });
+
     test('should convert GitHub shorthand to full URL', () => {
       expect(parseRemoteValue('user/repo')).toEqual({
         repoUrl: 'https://github.com/user/repo.git',
@@ -52,6 +70,53 @@ describe('remoteAction functions', () => {
         repoUrl: sshUrl,
         remoteBranch: undefined,
       });
+    });
+
+    test('should accept explicit URLs whose repo name starts with a dot (e.g. .github)', () => {
+      expect(parseRemoteValue('https://github.com/microsoft/.github')).toEqual({
+        repoUrl: 'https://github.com/microsoft/.github.git',
+        remoteBranch: undefined,
+      });
+      expect(parseRemoteValue('git@github.com:microsoft/.github.git')).toEqual({
+        repoUrl: 'git@github.com:microsoft/.github.git',
+        remoteBranch: undefined,
+      });
+      expect(parseRemoteValue('https://gitlab.com/group/.foo')).toEqual({
+        repoUrl: 'https://gitlab.com/group/.foo.git',
+        remoteBranch: undefined,
+      });
+    });
+
+    test('should still reject shorthand whose repo name starts with a dot', () => {
+      expect(() => parseRemoteValue('user/.repo')).toThrowError();
+      expect(() => parseRemoteValue('.user/repo')).toThrowError();
+    });
+
+    test('should accept explicit URLs whose owner/repo name leads or trails with . - _', () => {
+      expect(parseRemoteValue('https://github.com/owner/repo.')).toEqual({
+        repoUrl: 'https://github.com/owner/repo..git',
+        remoteBranch: undefined,
+      });
+      expect(parseRemoteValue('https://github.com/owner/repo-')).toEqual({
+        repoUrl: 'https://github.com/owner/repo-.git',
+        remoteBranch: undefined,
+      });
+      expect(parseRemoteValue('https://github.com/owner/repo_')).toEqual({
+        repoUrl: 'https://github.com/owner/repo_.git',
+        remoteBranch: undefined,
+      });
+      expect(parseRemoteValue('https://github.com/-owner/repo')).toEqual({
+        repoUrl: 'https://github.com/-owner/repo.git',
+        remoteBranch: undefined,
+      });
+      expect(parseRemoteValue('https://github.com/_owner/repo')).toEqual({
+        repoUrl: 'https://github.com/_owner/repo.git',
+        remoteBranch: undefined,
+      });
+    });
+
+    test('should reject explicit URLs with a doubled slash (empty path segment)', () => {
+      expect(() => parseRemoteValue('https://github.com/user//repo')).toThrowError();
     });
 
     test('should handle Azure DevOps SSH URLs', () => {
@@ -112,6 +177,66 @@ describe('remoteAction functions', () => {
       ).toEqual({
         repoUrl: 'https://some.gitlab.domain/some/path/username/repo.git',
         remoteBranch: 'branchname/withslash',
+      });
+    });
+
+    test('should drop the query, fragment and percent-encoding from a subpath', () => {
+      expect(parseRemoteValue('https://gitlab.com/o/r/-/blob/main/file.ts#L10-L20', ['main']).subpath).toEqual({
+        path: 'file.ts',
+        kind: 'file',
+      });
+      expect(parseRemoteValue('https://github.com/o/r/tree/main/src?x=1', ['main']).subpath).toEqual({
+        path: 'src',
+        kind: 'directory',
+      });
+      expect(parseRemoteValue('https://github.com/o/r/tree/main/my%20dir', ['main']).subpath).toEqual({
+        path: 'my dir',
+        kind: 'directory',
+      });
+      expect(parseRemoteValue('https://github.com/o/r/tree/main#readme', ['main']).subpath).toBeUndefined();
+      expect(parseRemoteValue('https://github.com/o/r/tree/main/docs?private_token=SECRET', ['main']).subpath).toEqual({
+        path: 'docs',
+        kind: 'directory',
+      });
+    });
+
+    test('should take the subpath after the ref even when the owner or repo shares its name', () => {
+      expect(parseRemoteValue('https://github.com/main/repo/tree/main/docs', ['main']).subpath).toEqual({
+        path: 'docs',
+        kind: 'directory',
+      });
+      expect(parseRemoteValue('https://github.com/o/docs/tree/docs/x', ['docs']).subpath).toEqual({
+        path: 'x',
+        kind: 'directory',
+      });
+    });
+
+    test('should classify raw URLs as files and Bitbucket src URLs as unknown', () => {
+      expect(parseRemoteValue('https://gitlab.com/o/r/-/raw/main/README.md', ['main']).subpath).toEqual({
+        path: 'README.md',
+        kind: 'file',
+      });
+      expect(parseRemoteValue('https://bitbucket.org/o/r/src/main/README.md', ['main']).subpath).toEqual({
+        path: 'README.md',
+        kind: 'unknown',
+      });
+    });
+
+    test('should report the path after the ref as a subpath', () => {
+      expect(parseRemoteValue('https://github.com/owner/repo/tree/main/clients/client-ses', ['main'])).toEqual({
+        repoUrl: 'https://github.com/owner/repo.git',
+        remoteBranch: 'main',
+        subpath: { path: 'clients/client-ses', kind: 'directory' },
+      });
+      expect(parseRemoteValue('https://github.com/owner/repo/blob/main/src/index.ts', ['main'])).toEqual({
+        repoUrl: 'https://github.com/owner/repo.git',
+        remoteBranch: 'main',
+        subpath: { path: 'src/index.ts', kind: 'file' },
+      });
+      expect(parseRemoteValue('https://github.com/owner/repo/tree/feature/x/docs', ['main', 'feature/x'])).toEqual({
+        repoUrl: 'https://github.com/owner/repo.git',
+        remoteBranch: 'feature/x',
+        subpath: { path: 'docs', kind: 'directory' },
       });
     });
 
@@ -236,6 +361,10 @@ describe('remoteAction functions', () => {
     test('should return null for invalid URLs', () => {
       const result = parseGitHubRepoInfo('invalid-url');
       expect(result).toBeNull();
+    });
+
+    test('should return null for non-GitHub SSH URLs', () => {
+      expect(parseGitHubRepoInfo('git@gitlab.com:user/repo.git')).toBeNull();
     });
 
     test('should handle git@ URLs', () => {

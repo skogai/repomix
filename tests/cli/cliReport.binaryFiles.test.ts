@@ -1,13 +1,12 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { reportSkippedFiles } from '../../src/cli/cliReport.js';
 import type { SkippedFileInfo } from '../../src/core/file/fileCollect.js';
 import { logger } from '../../src/shared/logger.js';
-
-vi.mock('../../src/shared/logger');
+import { silenceLogger } from '../testing/loggerDoubles.js';
 
 describe('reportSkippedFiles', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    silenceLogger();
   });
 
   test('should not report anything when there are no binary-content files', () => {

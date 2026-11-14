@@ -22,6 +22,7 @@ export const configHi = defineConfig({
             { text: 'बुनियादी उपयोग', link: '/hi/guide/usage' },
             { text: 'प्रॉम्प्ट उदाहरण', link: '/hi/guide/prompt-examples' },
             { text: 'उपयोग के मामले', link: '/hi/guide/use-cases' },
+            { text: 'FAQ और समस्या निवारण', link: '/hi/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configHi = defineConfig({
           items: [
             { text: 'आउटपुट फॉर्मेट', link: '/hi/guide/output' },
             { text: 'कमांड लाइन विकल्प', link: '/hi/guide/command-line-options' },
+            { text: 'वॉच मोड', link: '/hi/guide/watch-mode' },
             { text: 'कॉन्फ़िगरेशन', link: '/hi/guide/configuration' },
             { text: 'कस्टम निर्देश', link: '/hi/guide/custom-instructions' },
             { text: 'GitHub रिपॉजिटरी प्रोसेसिंग', link: '/hi/guide/remote-repository-processing' },

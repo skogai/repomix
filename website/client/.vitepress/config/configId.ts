@@ -22,6 +22,7 @@ export const configId = defineConfig({
             { text: 'Penggunaan Dasar', link: '/id/guide/usage' },
             { text: 'Contoh Prompt', link: '/id/guide/prompt-examples' },
             { text: 'Kasus Penggunaan', link: '/id/guide/use-cases' },
+            { text: 'FAQ dan Pemecahan Masalah', link: '/id/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configId = defineConfig({
           items: [
             { text: 'Format Output', link: '/id/guide/output' },
             { text: 'Opsi Baris Perintah', link: '/id/guide/command-line-options' },
+            { text: 'Mode Watch', link: '/id/guide/watch-mode' },
             { text: 'Konfigurasi', link: '/id/guide/configuration' },
             { text: 'Instruksi Khusus', link: '/id/guide/custom-instructions' },
             { text: 'Pemrosesan Repositori GitHub', link: '/id/guide/remote-repository-processing' },

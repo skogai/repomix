@@ -3,26 +3,9 @@ import type { RepomixConfigMerged } from '../../../src/config/configSchema.js';
 import type { GitDiffResult } from '../../../src/core/git/gitDiffHandle.js';
 import { calculateGitDiffMetrics } from '../../../src/core/metrics/calculateGitDiffMetrics.js';
 import type { MetricsTaskRunner } from '../../../src/core/metrics/metricsWorkerRunner.js';
-import {
-  countTokens,
-  type MetricsWorkerTask,
-  type TokenCountTask,
-} from '../../../src/core/metrics/workers/calculateMetricsWorker.js';
 import { logger } from '../../../src/shared/logger.js';
-import type { WorkerOptions } from '../../../src/shared/processConcurrency.js';
-
-vi.mock('../../../src/shared/logger');
-
-const mockInitTaskRunner = (_options: WorkerOptions): MetricsTaskRunner => {
-  return {
-    run: async (task: MetricsWorkerTask) => {
-      return await countTokens(task as TokenCountTask);
-    },
-    cleanup: async () => {
-      // Mock cleanup - no-op for tests
-    },
-  };
-};
+import { silenceLogger } from '../../testing/loggerDoubles.js';
+import { createInlineMetricsTaskRunner } from '../../testing/taskRunnerDoubles.js';
 
 describe('calculateGitDiffMetrics', () => {
   const mockConfig: RepomixConfigMerged = {
@@ -32,6 +15,7 @@ describe('calculateGitDiffMetrics', () => {
     output: {
       filePath: 'test-output.txt',
       style: 'xml',
+      filePathStyle: 'target-relative',
       parsableStyle: false,
       headerText: '',
       instructionFilePath: '',
@@ -72,14 +56,10 @@ describe('calculateGitDiffMetrics', () => {
     cwd: '/test/project',
   };
 
-  const mockTaskRunner = mockInitTaskRunner({
-    numOfTasks: 1,
-    workerType: 'calculateMetrics',
-    runtime: 'worker_threads',
-  });
+  const mockTaskRunner = createInlineMetricsTaskRunner();
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    silenceLogger();
   });
 
   describe('when git diffs are disabled', () => {
@@ -259,8 +239,8 @@ describe('calculateGitDiffMetrics', () => {
         taskRunner: mockTaskRunner,
       });
 
-      expect(result).toBeGreaterThan(0);
-      expect(typeof result).toBe('number');
+      // 1250 tokens for each of the work tree and staged diffs
+      expect(result).toBe(2500);
     });
   });
 

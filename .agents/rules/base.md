@@ -122,50 +122,47 @@ repomix --remote skogai/<repo> --output <path>.xml --style xml --parsable-style 
 
 Refer to `README.md` for full project overview and `CONTRIBUTING.md` for contribution procedures.
 
-## Directory Structure
+## Repository Layout
 
-```
-repomix/
-├── browser/      # Browser extension source code
-├── src/
-│   ├── cli/      # Argument parsing, command handling, output
-│   ├── config/   # Configuration loading, schema, defaults
-│   ├── core/
-│   │   ├── file/         # File reading, processing, tree generation, git
-│   │   ├── metrics/      # Character and token counting
-│   │   ├── output/       # Output generation per style
-│   │   ├── packager/     # Orchestrates collection, processing, output
-│   │   ├── security/     # Sensitive file exclusion
-│   │   ├── mcp/          # MCP server integration
-│   │   ├── tokenCount/   # Tiktoken token counting
-│   │   └── treeSitter/   # Tree-sitter parsing and language queries
-│   └── shared/   # Error handling, logging, helpers
-├── tests/        # Unit and integration tests (mirrors src/)
-└── website/      # VitePress documentation site
-```
+- `src/` — main source code (`cli/`, `config/`, `core/`, `shared/`). Feature-based structure; avoid dependencies between features
+- `tests/` — mirrors the `src/` directory structure
+- `website/` — documentation website (VitePress); docs live in 15 language directories (`en` + 14 translated locales) under `website/client/src/`
+- `browser/` — browser extension
 
 ## Coding Guidelines
 
-- Follow Biome (`biome.json`) for code style
-- Feature-based directory structure — no cross-feature dependencies
-- Split files exceeding 250 lines by functionality
-- Comments in English only where logic is non-obvious
-- Unit tests required for new features
-- Verify with `npm run lint` and `npm run test`
+- Follow the project's coding standards enforced by Biome (`biome.json`)
+- Keep each file focused on a single responsibility. Treat ~250 lines as a signal
+  to review a file's cohesion, not a mandate to split: split when the file mixes
+  multiple responsibilities, but leave it as-is when the length comes from one
+  cohesive concern (e.g. large data/config tables)
+- Add comments in English where non-obvious logic exists
+- Provide corresponding unit tests for new features
+- Verify changes by running:
+  ```bash
+  npm run lint  # Ensure code style compliance
+  npm run test  # Verify all tests pass
+  ```
+
+## Non-Obvious Rules and Pitfalls
+
+- The config JSON schema under `website/client/src/public/schemas/` is generated
+  (`npm run website-generate-schema`; CI regenerates it after merges to `main`).
+  Never edit it by hand.
+- User-facing option or feature changes must update the docs in all 15 language
+  directories under `website/client/src/`, not just `en`.
+- Root `npm run lint` does not typecheck the website client. When changing
+  `website/client`, verify with `npm run docs:build` in that directory.
+- The VitePress build does not validate in-page anchor links; when renaming a
+  heading, search the docs for links to its old anchor.
+- GitHub Actions steps must be pinned to full commit SHAs with a version comment
+  (e.g. `uses: actions/checkout@<sha> # v7.0.0`); pinact and zizmor enforce this in CI.
 
 ## Commit Messages
 
 Follow [Conventional Commits](https://www.conventionalcommits.org/) with scope: `type(scope): Description`
+(e.g. `feat(cli): Add new --no-progress flag`)
 
-```
-feat(cli): Add new --no-progress flag
-fix(security): Handle special characters in file paths
-docs(website): Update installation guide
-refactor(core): Split packager into smaller modules
-test(cli): Add tests for new CLI options
-```
-
-- Types: feat, fix, docs, style, refactor, test, chore
 - Scope: affected area (cli, core, website, security, etc.)
 - Description: clear, concise present tense starting with a capital letter
 - Commit body: follow the `contextual-commit` skill (`.claude/skills/contextual-commit/SKILL.md`)
@@ -175,6 +172,7 @@ test(cli): Add tests for new CLI options
 - Follow the template at `.github/pull_request_template.md`
 - Include a clear summary of changes at the top
 - Reference related issues using `#issue-number`
+- Combine small, related changes in the same area into one PR rather than splitting them
 
 ## Dependencies and Testing
 
@@ -194,7 +192,9 @@ export const functionName = async (
 ```
 
 - Mock dependencies by passing test doubles through the deps object
-- Use `vi.mock()` only when dependency injection is not feasible
+- Do not use module mocking (`vi.mock`, `vi.doMock`, `vi.resetModules`). The suite has none:
+  use `deps`, a real temp directory for filesystem code, or `vi.spyOn` on a shared object
+  (`silenceLogger()` in `tests/testing/loggerDoubles.ts` for the logger)
 
 ## Output Generation
 

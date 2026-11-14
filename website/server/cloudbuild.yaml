@@ -50,10 +50,16 @@ steps:
       - '--ingress'
       - 'all'
       - '--allow-unauthenticated'
+      # Dedicated runtime identity. Its only permission is secretAccessor on the
+      # four secrets below, so a compromise of the server process cannot reach
+      # the rest of the project. Keep this pinned: without it a deploy would fall
+      # back to the default compute service account, which holds project editor.
+      - '--service-account'
+      - 'repomix-server-run@$PROJECT_ID.iam.gserviceaccount.com'
       - '--set-env-vars'
       - 'NODE_ENV=production'
       - '--set-secrets'
-      - 'UPSTASH_REDIS_REST_URL=upstash-redis-rest-url:latest,UPSTASH_REDIS_REST_TOKEN=upstash-redis-rest-token:latest,CLOUDFLARE_ORIGIN_SECRET=cloudflare-origin-secret:latest'
+      - 'UPSTASH_REDIS_REST_URL=upstash-redis-rest-url:latest,UPSTASH_REDIS_REST_TOKEN=upstash-redis-rest-token:latest,CLOUDFLARE_ORIGIN_SECRET=cloudflare-origin-secret:latest,TURNSTILE_SECRET_KEY=turnstile-secret-key:latest'
 
   # Tag the image as latest
   - name: 'gcr.io/cloud-builders/docker'

@@ -1,3 +1,8 @@
+---
+title: Claude Code プラグイン
+description: MCP、スラッシュコマンド、AIによるリポジトリ探索に対応したRepomix公式Claude Codeプラグインのインストールと使い方を説明します。
+---
+
 # Claude Code プラグイン
 
 Repomixは[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)向けの公式プラグインを提供しています。これらのプラグインを使用すると、自然言語コマンドでClaude Code内から直接コードベースを分析・パッキングできます。
@@ -50,7 +55,7 @@ MCP サーバー統合によるAI駆動のコードベース分析を提供す�
 **機能:**
 - ローカル・リモートリポジトリのパッキング
 - パッキング済み出力の検索
-- セキュリティスキャン機能付きファイル読み込み（[Secretlint](https://github.com/secretlint/secretlint)）
+- 生成された出力ファイルの読み込み
 - 自動Tree-sitter圧縮（トークン数を約70%削減）
 
 ### 2. repomix-commands（スラッシュコマンドプラグイン）

@@ -1,3 +1,8 @@
+---
+title: Claude Code 플러그인
+description: "MCP, 슬래시 명령, AI 기반 저장소 탐색을 위한 공식 Repomix Claude Code 플러그인을 설치하고 사용하는 방법을 설명합니다."
+---
+
 # Claude Code 플러그인
 
 Repomix는 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)용 공식 플러그인을 제공하여 AI 기반 개발 환경과 원활하게 통합됩니다. 이 플러그인을 사용하면 자연어 명령을 사용하여 Claude Code 내에서 직접 코드베이스를 분석하고 패키징할 수 있습니다.
@@ -50,7 +55,7 @@ MCP 서버 통합을 통해 AI 기반 코드베이스 분석을 제공하는 기
 **기능:**
 - 로컬 및 원격 저장소 패키징
 - 패키징된 출력 검색
-- 내장 보안 스캔으로 파일 읽기 ([Secretlint](https://github.com/secretlint/secretlint))
+- 생성된 출력 파일 읽기
 - 자동 Tree-sitter 압축 (토큰 약 70% 감소)
 
 ### 2. repomix-commands (슬래시 명령 플러그인)

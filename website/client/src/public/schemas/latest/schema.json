@@ -10,6 +10,37 @@
       "properties": {
         "maxFileSize": {
           "type": "number"
+        },
+        "processors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "onError": {
+                "enum": [
+                  "fail",
+                  "skip"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "pattern",
+              "command"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
@@ -26,6 +57,13 @@
             "markdown",
             "json",
             "plain"
+          ],
+          "type": "string"
+        },
+        "filePathStyle": {
+          "enum": [
+            "target-relative",
+            "cwd-relative"
           ],
           "type": "string"
         },
@@ -55,6 +93,27 @@
         },
         "compress": {
           "type": "boolean"
+        },
+        "patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string"
+              },
+              "compress": {
+                "type": "boolean"
+              },
+              "directoryStructureOnly": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "pattern"
+            ],
+            "additionalProperties": false
+          }
         },
         "topFilesLength": {
           "type": "number"
@@ -91,6 +150,11 @@
               "type": "string"
             }
           ]
+        },
+        "tokenBudget": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         },
         "git": {
           "type": "object",

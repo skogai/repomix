@@ -22,6 +22,7 @@ export const configFr = defineConfig({
             { text: 'Utilisation de base', link: '/fr/guide/usage' },
             { text: 'Exemples de prompts', link: '/fr/guide/prompt-examples' },
             { text: "Cas d'Usage", link: '/fr/guide/use-cases' },
+            { text: 'FAQ et dépannage', link: '/fr/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configFr = defineConfig({
           items: [
             { text: 'Formats de sortie', link: '/fr/guide/output' },
             { text: 'Options de ligne de commande', link: '/fr/guide/command-line-options' },
+            { text: 'Mode surveillance', link: '/fr/guide/watch-mode' },
             { text: 'Configuration', link: '/fr/guide/configuration' },
             { text: 'Instructions personnalisées', link: '/fr/guide/custom-instructions' },
             { text: 'Traitement des dépôts GitHub', link: '/fr/guide/remote-repository-processing' },

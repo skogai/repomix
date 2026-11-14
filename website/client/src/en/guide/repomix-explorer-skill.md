@@ -1,16 +1,47 @@
+---
+title: Repomix Explorer Skill (Agent Skills)
+description: Install the Repomix Explorer agent skill to analyze local and remote codebases with Claude Code and other AI assistants that support the Agent Skills format.
+---
+
 # Repomix Explorer Skill (Agent Skills)
 
 Repomix provides a ready-to-use **Repomix Explorer** skill that enables AI coding assistants to analyze and explore codebases using Repomix CLI.
 
-This skill is designed to work with various AI tools including Claude Code, Cursor, Codex, GitHub Copilot, and more.
+This skill is designed for Claude Code and other AI assistants that support the Agent Skills format.
 
 ## Quick Install
 
-```bash
-npx add-skill yamadashy/repomix --skill repomix-explorer
+For Claude Code, install the official Repomix Explorer plugin:
+
+```text
+/plugin marketplace add yamadashy/repomix
+/plugin install repomix-explorer@repomix
 ```
 
-This command installs the skill to your AI assistant's skills directory (e.g., `.claude/skills/`), making it immediately available.
+The Claude Code plugin provides namespaced commands such as `/repomix-explorer:explore-local` and `/repomix-explorer:explore-remote`. See [Claude Code Plugins](/guide/claude-code-plugins) for the full plugin setup.
+
+For Codex, Cursor, OpenClaw, and other Agent Skills-compatible assistants, install the standalone skill with the Skills CLI:
+
+```bash
+npx skills add yamadashy/repomix --skill repomix-explorer
+```
+
+To target a specific assistant, pass `--agent`:
+
+```bash
+npx skills add yamadashy/repomix --skill repomix-explorer --agent codex
+npx skills add yamadashy/repomix --skill repomix-explorer --agent openclaw
+```
+
+The Skills CLI installs the skill into the selected assistant's skills directory, such as `.agents/skills/`, `.claude/skills/`, or `skills/` for OpenClaw projects.
+
+For Hermes Agent, install the single-file skill with Hermes Agent's native skills command:
+
+```bash
+hermes skills install https://raw.githubusercontent.com/yamadashy/repomix/main/skills/repomix-explorer/SKILL.md
+```
+
+If you use Hermes Agent primarily for repository analysis, the [MCP Server](/guide/mcp-server) setup is also a good option because it runs Repomix directly as an MCP server.
 
 ## What It Does
 

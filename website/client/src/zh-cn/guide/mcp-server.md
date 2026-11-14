@@ -1,3 +1,8 @@
+---
+title: MCP服务器
+description: 将 Repomix 作为 Model Context Protocol 服务器运行，让 AI 助手可以直接打包、搜索和读取本地或远程代码库。
+---
+
 # MCP服务器
 
 Repomix 支持 [Model Context Protocol (MCP)](https://modelcontextprotocol.io)，允许 AI 助手直接与你的代码库交互。当作为 MCP 服务器运行时，Repomix 提供了工具，使 AI 助手能够在无需手动准备文件的情况下打包本地或远程仓库进行分析。
@@ -14,6 +19,30 @@ repomix --mcp
 ```
 
 这会以 MCP 服务器模式启动 Repomix，使其可供支持 Model Context Protocol 的 AI 助手使用。
+
+## 沙箱模式
+
+默认情况下，MCP 服务器可以读取主机用户能够访问的任何路径。这对受信任的本地助手来说很方便，但当服务器暴露给不受信任的客户端或 agent 时，权限范围就显得过大了。`--sandbox` 标志会将服务器的文件工具限制在单个工作区目录内：
+
+```bash
+# 限制在当前工作目录内
+repomix --mcp --sandbox
+
+# 限制在指定目录内
+repomix --mcp --sandbox path/to/project
+```
+
+启用沙箱模式后：
+
+- **所有路径都相对于工作区根目录解析。** 绝对路径、`~`、`..` 以及 Windows 驱动器/UNC 路径都会被拒绝，解析后落在根目录之外的路径（包括通过符号链接的情况）也会被丢弃。返回结果和错误消息中的路径同样是相对路径，因此不会暴露主机路径。这也适用于下方工具参考中的 `directory` 和 `path` 参数：在沙箱模式下，应将它们指定为相对于工作区根目录的路径，而不是这些表格中通常描述的绝对路径。
+- **仅注册只读且限定在根目录内的工具：** `pack_codebase`、`read_repomix_output`、`grep_repomix_output`、`file_system_read_file` 和 `file_system_read_directory`。远程打包、Skill 生成以及附加外部输出等功能均被禁用，因为它们会访问网络、写入文件或引用任意路径。这两个 `file_system_*` 工具本身也仅在沙箱模式下可用，其可访问范围由工作区根目录限定。
+- **不会加载配置文件。** `pack_codebase` 会同时忽略被打包目录中的 `repomix.config.*` 和你的全局配置。
+
+如果不使用 `--sandbox`，`pack_codebase` 会加载并信任所打包目录中的 `repomix.config.*`，效果等同于在该目录下通过命令行运行 `repomix`。配置文件就是代码：它可能在加载时被执行，并读取仓库之外的文件（参见[安全](/zh-cn/guide/security#为什么配置文件是代码)）。如果你的助手可能打包不受信任的目录，例如克隆下来的第三方仓库，请使用 `--sandbox`。
+
+这是在应用层面对工具能力范围的限制（纵深防御），而非操作系统级别的沙箱。当为不受信任的客户端托管服务器时，仍应在你所在平台的常规隔离机制下运行它（容器、专用用户等）。
+
+`--sandbox` 仅影响 MCP 服务器；如果不搭配 `--mcp` 使用则不会生效。
 
 ## 配置 MCP 服务器
 
@@ -113,6 +142,7 @@ claude mcp add repomix -- npx -y repomix --mcp
 | `compress` | 否 | `false` | 启用 Tree-sitter 压缩以提取基本代码签名和结构，同时删除实现细节。在保持语义信息的同时减少约 70% 的 token 用量。由于 `grep_repomix_output` 支持按需检索内容，一般不需要启用此选项。 |
 | `includePatterns` | 否 | — | 使用 fast-glob 模式指定要包含的文件。多个模式用逗号分隔（例如 `"**/*.{js,ts}"`、`"src/**,docs/**"`） |
 | `ignorePatterns` | 否 | — | 使用 fast-glob 模式指定要排除的其他文件。多个模式用逗号分隔（例如 `"test/**,*.spec.js"`）。补充 `.gitignore` 和内置排除。 |
+| `outputPatterns` | 否 | — | 按文件设置内容包含级别，与配置文件中的 [`output.patterns`](./configuration.md) 选项对应。一个由 `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }` 组成的数组。第一个匹配的模式优先；`directoryStructureOnly` 优先于 `compress`，未设置任一标志的匹配项将强制显示完整内容（可用于在全局启用 `compress` 时豁免特定文件）。会覆盖目标仓库 `repomix.config.json` 中的 `output.patterns` 设置。 |
 | `topFilesLength` | 否 | `10` | 在指标摘要中显示的最大文件数（按大小排序） |
 | `style` | 否 | `xml` | 输出格式样式：`xml`、`markdown`、`json` 或 `plain` |
 
@@ -120,12 +150,18 @@ claude mcp add repomix -- npx -y repomix --mcp
 ```json
 {
   "directory": "/path/to/your/project",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
+
+在上面的示例中（`compress: true` 作为未匹配文件的兜底设置），`src/core/` 下的文件将保留完整内容，`docs/` 下的文件仅在目录结构中列出，其余文件都会被压缩。
 
 ### pack_remote_repository
 
@@ -139,6 +175,7 @@ claude mcp add repomix -- npx -y repomix --mcp
 | `compress` | 否 | `false` | 启用 Tree-sitter 压缩以提取基本代码签名和结构，同时删除实现细节。在保持语义信息的同时减少约 70% 的 token 用量。由于 `grep_repomix_output` 支持按需检索内容，一般不需要启用此选项。 |
 | `includePatterns` | 否 | — | 使用 fast-glob 模式指定要包含的文件。多个模式用逗号分隔（例如 `"**/*.{js,ts}"`、`"src/**,docs/**"`） |
 | `ignorePatterns` | 否 | — | 使用 fast-glob 模式指定要排除的其他文件。多个模式用逗号分隔（例如 `"test/**,*.spec.js"`）。补充 `.gitignore` 和内置排除。 |
+| `outputPatterns` | 否 | — | 按文件设置内容包含级别，与配置文件中的 [`output.patterns`](./configuration.md) 选项对应。一个由 `{ "pattern": string, "compress"?: boolean, "directoryStructureOnly"?: boolean }` 组成的数组。第一个匹配的模式优先；`directoryStructureOnly` 优先于 `compress`，未设置任一标志的匹配项将强制显示完整内容（可用于在全局启用 `compress` 时豁免特定文件）。 |
 | `topFilesLength` | 否 | `10` | 在指标摘要中显示的最大文件数（按大小排序） |
 | `style` | 否 | `xml` | 输出格式样式：`xml`、`markdown`、`json` 或 `plain` |
 
@@ -146,9 +183,13 @@ claude mcp add repomix -- npx -y repomix --mcp
 ```json
 {
   "remote": "yamadashy/repomix",
-  "compress": false,
+  "compress": true,
   "includePatterns": "src/**/*.ts,**/*.md",
   "ignorePatterns": "**/*.log,tmp/",
+  "outputPatterns": [
+    { "pattern": "src/core/**" },
+    { "pattern": "docs/**/*", "directoryStructureOnly": true }
+  ],
   "topFilesLength": 10
 }
 ```
@@ -168,7 +209,7 @@ claude mcp add repomix -- npx -y repomix --mcp
 **功能：**
 - 专为基于 Web 的环境或沙箱应用程序设计
 - 使用其 ID 检索先前生成的输出内容
-- 无需文件系统访问权限即可安全访问打包的代码库
+- 无需文件系统访问权限即可访问打包的代码库
 - 支持大文件的部分读取
 
 **示例：**
@@ -213,48 +254,35 @@ claude mcp add repomix -- npx -y repomix --mcp
 
 ### file_system_read_file 和 file_system_read_directory
 
-Repomix 的 MCP 服务器提供了两个文件系统工具，允许 AI 助手安全地与本地文件系统交互：
+这两个文件系统工具仅在[沙箱模式](#沙箱模式)（`--sandbox`）下可用，其可访问范围由工作区根目录限定。如果不使用 `--sandbox`，它们不会被注册。
 
 1. `file_system_read_file`
-  - 使用绝对路径从本地文件系统读取文件内容
-  - 包含内置安全验证以检测和防止访问包含敏感信息的文件
-  - 使用 [Secretlint](https://github.com/secretlint/secretlint) 实现安全验证
-  - 防止访问包含敏感信息的文件（API 密钥、密码、机密）
-  - 验证绝对路径以防止目录遍历攻击
-  - 对无效路径和安全问题返回清晰的错误消息
+  - 读取相对于工作区根目录的路径下的文件内容（例如 `src/index.ts`）
+  - 作为一项额外的启发式防护措施，拒绝匹配已知敏感信息格式（[Secretlint](https://github.com/secretlint/secretlint)）的内容；访问边界是工作区根目录，而非该扫描
+  - 对无效路径返回清晰的错误消息，且不会暴露主机路径
 
 2. `file_system_read_directory`
-  - 使用绝对路径列出目录的内容
-  - 返回显示文件和子目录的格式化列表，带有清晰的指示符
+  - 列出相对于工作区根目录的路径下的目录内容（例如 `.` 或 `src`）
   - 使用清晰的指示符（`[FILE]` 或 `[DIR]`）显示文件和目录
-  - 提供安全的目录遍历和适当的错误处理
-  - 验证路径并确保使用绝对路径
   - 对探索项目结构和理解代码库组织很有用
-
-这两个工具都包含了强大的安全措施：
-- 绝对路径验证以防止目录遍历攻击
-- 权限检查以确保适当的访问权限
-- 与 Secretlint 集成以检测敏感信息
-- 清晰的错误消息以便于调试和安全意识
 
 **示例：**
 ```typescript
 // 读取文件
 const fileContent = await tools.file_system_read_file({
-  path: '/absolute/path/to/file.txt'
+  path: 'src/index.ts'
 });
 
 // 列出目录内容
 const dirContent = await tools.file_system_read_directory({
-  path: '/absolute/path/to/directory'
+  path: 'src'
 });
 ```
 
 这些工具在 AI 助手需要执行以下操作时特别有用：
-- 分析代码库中的特定文件
+- 分析工作区中的特定文件
 - 导航目录结构
 - 验证文件存在性和可访问性
-- 确保安全的文件系统操作
 
 ## 将 Repomix 作为 MCP 服务器使用的好处
 

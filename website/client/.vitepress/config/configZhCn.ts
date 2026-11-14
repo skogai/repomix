@@ -22,6 +22,7 @@ export const configZhCn = defineConfig({
             { text: '基本用法', link: '/zh-cn/guide/usage' },
             { text: '提示示例', link: '/zh-cn/guide/prompt-examples' },
             { text: '使用场景', link: '/zh-cn/guide/use-cases' },
+            { text: '常见问题和故障排除', link: '/zh-cn/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configZhCn = defineConfig({
           items: [
             { text: '输出格式', link: '/zh-cn/guide/output' },
             { text: '命令行选项', link: '/zh-cn/guide/command-line-options' },
+            { text: '监视模式', link: '/zh-cn/guide/watch-mode' },
             { text: '配置', link: '/zh-cn/guide/configuration' },
             { text: '自定义指令', link: '/zh-cn/guide/custom-instructions' },
             { text: 'GitHub 仓库处理', link: '/zh-cn/guide/remote-repository-processing' },

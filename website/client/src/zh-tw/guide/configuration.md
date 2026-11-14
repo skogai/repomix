@@ -1,3 +1,8 @@
+---
+title: 設定
+description: 使用 JSON、JSONC、JSON5、JavaScript 或 TypeScript 檔案設定 Repomix，包括輸出格式、包含與忽略模式以及進階選項。
+---
+
 # 設定
 
 Repomix可以透過設定檔或命令列選項進行設定。設定檔允許您自訂程式碼庫的處理和輸出方式。
@@ -86,10 +91,13 @@ JavaScript設定檔的工作方式與TypeScript相同，支援`defineConfig`和�
 | 選項                             | 說明                                                                                                                         | 預設值                 |
 |----------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
 | `input.maxFileSize`              | 要處理的最大檔案大小（位元組）。超過此大小的檔案將被跳過。用於排除大型二進位檔案或資料檔案                                | `50000000`            |
+| `input.processors`               | 依序排列的 `{ pattern, command, timeout?, onError? }` 項目陣列，會在打包前執行外部命令來轉換符合的檔案內容（例如 JSON→TOON）。第一個符合的 glob 優先。因為會執行任意命令，所以僅在本地 CLI 執行時（以及使用 `--remote-trust-config` 的遠端儲存庫）啟用。請參閱[檔案處理器](#檔案處理器) | 未設定                 |
 | `output.filePath`                | 輸出檔案名。支援XML、Markdown和純文字格式                                                                                   | `"repomix-output.xml"` |
 | `output.style`                   | 輸出樣式（`xml`、`markdown`、`json`、`plain`）。每種格式對不同的AI工具都有其優勢                                                   | `"xml"`                |
+| `output.filePathStyle`           | 輸出中顯示檔案路徑的方式（`target-relative` 表示路徑相對於每個目標根目錄，`cwd-relative` 表示路徑相對於目前工作目錄）              | `"target-relative"`    |
 | `output.parsableStyle`           | 是否根據所選樣式模式轉義輸出。可以提供更好的解析，但可能會增加令牌數量                                                    | `false`                |
 | `output.compress`                | 是否使用Tree-sitter執行智慧程式碼提取，在保持結構的同時減少令牌數量                                                       | `false`                |
+| `output.patterns`                | 每個檔案的包含層級。一個有序的 `{ pattern, compress?, directoryStructureOnly? }` 項目陣列；第一個符合的 glob 優先，並覆寫該檔案的全域 `output.compress` 設定。請參閱[每個檔案的包含層級](#每個檔案的包含層級) | 未設定                 |
 | `output.headerText`              | 要包含在檔案頭部的自訂文字。對於為AI工具提供上下文或指令很有用                                                            | `null`                 |
 | `output.instructionFilePath`     | 包含用於AI處理的詳細自訂指令的檔案路徑                                                                                     | `null`                 |
 | `output.fileSummary`             | 是否在輸出開頭包含顯示檔案計數、大小和其他指標的摘要部分                                                                   | `true`                 |
@@ -101,6 +109,7 @@ JavaScript設定檔的工作方式與TypeScript相同，支援`defineConfig`和�
 | `output.truncateBase64`          | 是否截斷長的base64數據字符串（例如圖像）以減少令牌數量                                                                      | `false`                |
 | `output.copyToClipboard`         | 是否除了儲存檔案外還將輸出複製到系統剪貼簿                                                                                 | `false`                |
 | `output.splitOutput`             | 按每部分最大大小將輸出拆分為多個編號檔案（例如，`1000000` 表示約1MB）。CLI 接受可讀大小如 `500kb` 或 `2mb`。使每個檔案保持在限制以下，並避免跨部分拆分來源檔案 | 未設定 |
+| `output.tokenBudget`             | 當打包輸出超過此權杖數量時以非零退出碼失敗。作為 CI/agent 上下文限制的防護；輸出仍會產生 | 未設定 |
 | `output.topFilesLength`          | 在摘要中顯示的頂部檔案數量。如果設定為0，則不顯示摘要                                                                      | `5`                    |
 | `output.includeEmptyDirectories` | 是否在儲存庫結構中包含空目錄                                                                                               | `false`                |
 | `output.includeFullDirectoryStructure` | 使用`include`模式時，是否顯示完整的目錄樹（遵守ignore模式）同時僅處理包含的檔案。為AI分析提供完整的儲存庫上下文 | `false`                |
@@ -147,11 +156,15 @@ JavaScript設定檔的工作方式與TypeScript相同，支援`defineConfig`和�
 {
   "$schema": "https://repomix.com/schemas/latest/schema.json",
   "input": {
-    "maxFileSize": 50000000
+    "maxFileSize": 50000000,
+    // "processors": [
+    //   { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    // ]
   },
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
+    "filePathStyle": "target-relative",
     "parsableStyle": false,
     "compress": false,
     "headerText": "打包檔案的自訂頭部資訊",
@@ -162,6 +175,10 @@ JavaScript設定檔的工作方式與TypeScript相同，支援`defineConfig`和�
     "removeEmptyLines": false,
     "topFilesLength": 5,
     "showLineNumbers": false,
+    // "patterns": [
+    //   { "pattern": "docs/**/*", "compress": true },
+    //   { "pattern": "website/**/*", "directoryStructureOnly": true }
+    // ],
     "truncateBase64": false,
     "copyToClipboard": false,
     "includeEmptyDirectories": false,
@@ -321,6 +338,93 @@ build/
 - 移除函式本體和實作細節
 
 更多詳細資訊和範例，請參閱[程式碼壓縮指南](code-compress)。
+
+### 每個檔案的包含層級
+
+`output.compress` 會對每個檔案套用單一層級，而 `output.patterns` 則讓您可以從設定檔中**依 glob** 控制細節層級。每個項目透過 glob 鎖定檔案（比對方式與 `include`/`ignore` 相同），並針對符合的檔案覆寫全域 `output.compress` 設定。
+
+```json5
+{
+  "output": {
+    "compress": false, // 全域預設值作為萬用後備
+    "patterns": [
+      { "pattern": "docs/**/*", "compress": true },
+      { "pattern": "website/**/*", "directoryStructureOnly": true }
+    ]
+  }
+}
+```
+
+每個檔案會解析為以下三種層級之一：
+
+- **完整內容**（預設）：包含檔案的完整內容。
+- **壓縮**（`compress: true`）：內容會通過與 `output.compress` 相同的 Tree-sitter 處理流程。
+- **僅目錄結構**（`directoryStructureOnly: true`）：檔案會列在目錄結構中，但其內容區塊會完全從輸出中省略。
+
+規則如下：
+
+- 模式會依陣列順序評估，對於指定的檔案，**第一個符合的模式優先**。
+- 符合的模式的旗標會覆寫全域 `output.compress` 設定。若模式符合但未設定任何旗標，則會強制該檔案使用**完整內容**，這對於將檔案從全域 `compress` 中加入白名單很方便。
+- 當同一個模式同時設定 `directoryStructureOnly` 與 `compress` 時，`directoryStructureOnly` 優先。
+- 若沒有任何模式符合，則套用全域行為（完整內容，或當 `output.compress` 為 `true` 時為壓縮）。
+
+此選項僅限設定檔使用；沒有對應的 CLI 旗標。
+
+### 檔案處理器
+
+`input.processors` 會執行外部命令，在檔案內容被打包**之前**進行轉換。每個項目透過 glob 鎖定檔案（比對方式與 `include`/`ignore` 相同），並以該命令的標準輸出取代符合檔案的內容。這對於縮減令牌數量或轉換格式的處理很有用，例如將 JSON 轉換為 [TOON](https://github.com/toon-format/toon)、壓縮 SVG，或將 notebook 轉換為純腳本。
+
+```json5
+{
+  "input": {
+    "processors": [
+      {
+        "pattern": "**/*.json",
+        "command": "npx @toon-format/cli {file}"
+      }
+    ]
+  }
+}
+```
+
+運作方式：
+
+- Repomix 會將每個符合的檔案內容寫入暫存檔案，並以其路徑取代命令中的 `{file}` 佔位符（此佔位符為**必要**）。
+- 此命令會透過 shell 執行，因此管線與 `npx` 等工具都能運作。其標準輸出會成為該檔案的新內容，接著會像其他檔案一樣流經管線的其餘部分（安全檢查、令牌計數與輸出產生）。
+- 模式會依陣列順序評估，**第一個符合的模式優先**——一個檔案最多只會被一個處理器轉換（不會串聯處理）。
+
+各處理器的選項：
+
+- `timeout`：等待命令執行的最長時間（毫秒）。預設值：`60000`（60 秒）。請注意，`npx` 在快取為空時可能需要額外時間下載套件。
+- `onError`：命令以非零狀態退出或逾時時的處理方式。`"fail"`（預設）會中止整個打包過程；`"skip"` 會記錄警告並回退使用該檔案的原始內容。
+
+範例命令（每個都是與合適的 `pattern` 搭配的 `command` 值）：
+
+| 模式 | `command` | 作用 |
+| --- | --- | --- |
+| `**/*.json` | `jq -c . {file}` | 去除空白以壓縮 JSON |
+| `**/*.json` | `npx @toon-format/cli {file}` | 將 JSON 轉換為 [TOON](https://github.com/toon-format/toon)，一種精簡且節省 token 的格式 |
+| `**/*.svg` | `npx svgo -i {file} -o -` | 壓縮 SVG |
+| `**/*.ipynb` | `jupyter nbconvert --to script --stdout {file}` | 將 Jupyter notebook 轉換為純 Python 指令碼 |
+
+由於第一個符合的模式優先，因此每個檔案只套用一個處理器——例如，對於 `**/*.json` 只選擇 `jq` 或 TOON 轉換器其中之一。命令必須將轉換後的內容寫入標準輸出，而且它呼叫的工具必須在你的 `PATH` 上可用（基於 `npx` 的命令會在首次使用時下載工具）。
+
+::: warning 安全性
+檔案處理器會執行來自您設定檔的**任意命令**，因此遵循嚴格的信任模型：
+
+- **僅在本地 CLI 執行時**啟用 —— Repomix 會假設您工作目錄中的設定檔屬於您自己，這與 npm 腳本或 Makefile 的信任邊界相同。同樣地，如果您在他人提供的儲存庫中執行 `repomix`，卻**事先未檢查其 `repomix.config.json`**，其處理器命令就會在您的機器上執行。在打包不受信任的儲存庫之前，請先檢查其設定檔。
+- 在函式庫 API（`pack()` / `runCli()`）、MCP 伺服器，以及託管的 [repomix.com](https://repomix.com) 中皆為**停用**狀態，因此這些管道都無法從設定檔執行命令。
+- 對於遠端儲存庫（`--remote`），複製儲存庫的設定 —— 以及其處理器 —— 只有在您明確傳入 `--remote-trust-config` 時才會被信任。若未傳入，遠端設定甚至不會被載入。
+
+啟動時會記錄目前啟用的處理器，讓來自不熟悉設定檔的意外處理器變得可見。由於命令會在啟動時與錯誤訊息中被印出，請透過環境變數（例如 `$TOKEN`）參照憑證，而非直接寫在命令中，因為環境變數在記錄時不會被展開。
+:::
+
+注意事項：
+
+- 不建議在同一個檔案上同時使用**會改變格式**的處理器與 `output.compress`、`output.removeComments` 或 `output.patterns` 的 `compress`：這些步驟是依檔案的原始副檔名來分派的，因此會對轉換後的內容執行錯誤的語言處理器。基於同樣的原因，Markdown 輸出中的程式碼區塊也會依原始副檔名標記（例如，JSON→TOON 轉換後的檔案會標記為 `json`）。壓縮是盡力而為，解析失敗時會靜默回退為轉換後的內容。
+- 使用 `--watch` 時，符合的檔案會在每次重新建置時重新處理，也就是每次都會重新執行該命令。
+- 逾時時，Repomix 會終止該命令所在的 shell；若命令自行產生了長期執行的背景程序，這些程序可能會繼續執行。
+- 處理器只會看到文字檔案（二進位檔案會在處理前被排除），其輸出會以 UTF-8 讀取。
 
 ### Git整合
 

@@ -1,4 +1,6 @@
+import os from 'node:os';
 import path from 'node:path';
+import { isPathWithin } from '../../shared/pathUtils.js';
 
 const SKILL_NAME_MAX_LENGTH = 64;
 const SKILL_DESCRIPTION_MAX_LENGTH = 1024;
@@ -124,6 +126,18 @@ export const extractRepoName = (url: string): string => {
     cleanUrl = cleanUrl.slice(0, -4);
   }
 
+  try {
+    const parsedUrl = new URL(cleanUrl);
+    if (parsedUrl.hostname === 'github.com' || parsedUrl.hostname === 'www.github.com') {
+      const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
+      if (pathParts.length >= 2) {
+        return pathParts[1].replace(/\.git$/, '');
+      }
+    }
+  } catch {
+    // Fall through to shorthand and SSH URL handling.
+  }
+
   // Try to match the last path segment
   const lastSlashIndex = cleanUrl.lastIndexOf('/');
   if (lastSlashIndex !== -1 && lastSlashIndex < cleanUrl.length - 1) {
@@ -158,4 +172,24 @@ export const generateDefaultSkillName = (rootDirs: string[]): string => {
   const baseName = path.basename(path.resolve(primaryDir));
   const skillName = `${SKILL_NAME_PREFIX}-${toKebabCase(baseName)}`;
   return validateSkillName(skillName);
+};
+
+export type SkillLocation = 'personal' | 'project';
+
+/**
+ * Get the base directory for skills based on location type.
+ */
+export const getSkillBaseDir = (cwd: string, location: SkillLocation): string => {
+  if (location === 'personal') {
+    return path.join(os.homedir(), '.claude', 'skills');
+  }
+  return path.join(cwd, '.claude', 'skills');
+};
+
+/**
+ * Determine skill location type based on the skill directory path.
+ */
+export const getSkillLocation = (skillDir: string): SkillLocation => {
+  const personalSkillsBase = getSkillBaseDir('', 'personal');
+  return isPathWithin(personalSkillsBase, skillDir) ? 'personal' : 'project';
 };

@@ -1,3 +1,8 @@
+---
+title: Claude Code 插件
+description: 安装并使用官方 Repomix Claude Code 插件，支持 MCP、斜杠命令和 AI 驱动的仓库探索。
+---
+
 # Claude Code 插件
 
 Repomix 为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) 提供官方插件，可与 AI 驱动的开发环境无缝集成。这些插件使你可以使用自然语言命令直接在 Claude Code 中分析和打包代码库。
@@ -50,7 +55,7 @@ Repomix 为 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overvie
 **功能：**
 - 打包本地和远程仓库
 - 搜索打包输出
-- 使用内置安全扫描读取文件（[Secretlint](https://github.com/secretlint/secretlint)）
+- 读取生成的输出文件
 - 自动 Tree-sitter 压缩（减少约 70% 的 token）
 
 ### 2. repomix-commands（斜杠命令插件）

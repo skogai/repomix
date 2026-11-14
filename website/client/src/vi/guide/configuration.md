@@ -1,3 +1,8 @@
+---
+title: Cấu hình
+description: Cấu hình Repomix bằng file JSON, JSONC, JSON5, JavaScript hoặc TypeScript, bao gồm output format, include và ignore pattern cùng các tùy chọn nâng cao.
+---
+
 # Cấu hình
 
 Repomix có thể được cấu hình bằng file cấu hình hoặc các tùy chọn dòng lệnh. File cấu hình cho phép bạn tùy chỉnh các khía cạnh khác nhau về cách xử lý và xuất ra codebase của bạn.
@@ -86,10 +91,13 @@ File cấu hình JavaScript hoạt động tương tự như TypeScript, hỗ tr
 | Tùy chọn                         | Mô tả                                                                                                                        | Mặc định               |
 |----------------------------------|------------------------------------------------------------------------------------------------------------------------------|------------------------|
 | `input.maxFileSize`              | Kích thước file tối đa tính bằng byte để xử lý. Các file lớn hơn sẽ bị bỏ qua. Hữu ích để loại trừ các file binary lớn hoặc file dữ liệu | `50000000`            |
+| `input.processors`               | Mảng có thứ tự gồm các mục `{ pattern, command, timeout?, onError? }` chạy một lệnh bên ngoài để chuyển đổi các file khớp trước khi đóng gói (ví dụ JSON→TOON). Glob khớp đầu tiên sẽ thắng. Chạy các lệnh tùy ý, vì vậy chỉ chạy cho các lần chạy CLI cục bộ (và các kho lưu trữ từ xa có `--remote-trust-config`). Xem [Bộ xử lý File](#bo-xu-ly-file) | Không đặt              |
 | `output.filePath`                | Tên file đầu ra. Hỗ trợ định dạng XML, Markdown và văn bản thuần túy                                                        | `"repomix-output.xml"` |
 | `output.style`                   | Kiểu đầu ra (`xml`, `markdown`, `json`, `plain`). Mỗi định dạng có những ưu điểm riêng cho các công cụ AI khác nhau               | `"xml"`                |
+| `output.filePathStyle`           | Cách hiển thị đường dẫn tệp trong đầu ra (`target-relative` giữ đường dẫn tương đối so với thư mục gốc của mỗi mục tiêu, `cwd-relative` giữ đường dẫn tương đối so với thư mục làm việc hiện tại) | `"target-relative"`    |
 | `output.parsableStyle`           | Có nên escape đầu ra dựa trên schema kiểu đã chọn hay không. Cho phép phân tích tốt hơn nhưng có thể tăng số lượng token | `false`                |
 | `output.compress`                | Có nên thực hiện trích xuất mã thông minh bằng Tree-sitter để giảm số lượng token trong khi bảo toàn cấu trúc hay không    | `false`                |
+| `output.patterns`                | Mức độ bao gồm theo từng file. Một mảng có thứ tự gồm các mục `{ pattern, compress?, directoryStructureOnly? }`; glob khớp đầu tiên sẽ thắng và ghi đè `output.compress` toàn cục cho file đó. Xem [Mức độ Bao gồm theo Từng File](#muc-đo-bao-gom-theo-tung-file) | Không đặt              |
 | `output.headerText`              | Văn bản tùy chỉnh để đưa vào header file. Hữu ích để cung cấp ngữ cảnh hoặc hướng dẫn cho các công cụ AI                  | `null`                 |
 | `output.instructionFilePath`     | Đường dẫn đến file chứa hướng dẫn tùy chỉnh chi tiết cho xử lý AI                                                          | `null`                 |
 | `output.fileSummary`             | Có nên bao gồm phần tóm tắt ở đầu hiển thị số lượng file, kích thước và các chỉ số khác hay không                          | `true`                 |
@@ -101,6 +109,7 @@ File cấu hình JavaScript hoạt động tương tự như TypeScript, hỗ tr
 | `output.truncateBase64`          | Có nên cắt bớt các chuỗi dữ liệu base64 dài (ví dụ: hình ảnh) để giảm số lượng token hay không                            | `false`                |
 | `output.copyToClipboard`         | Có nên sao chép đầu ra vào clipboard hệ thống ngoài việc lưu file hay không                                                | `false`                |
 | `output.splitOutput`             | Chia đầu ra thành nhiều tệp được đánh số theo kích thước tối đa mỗi phần (ví dụ: `1000000` cho ~1MB). CLI chấp nhận kích thước dễ đọc như `500kb` hoặc `2mb`. Giữ mỗi tệp dưới giới hạn và tránh chia các tệp nguồn giữa các phần | Không đặt |
+| `output.tokenBudget`             | Thất bại với mã thoát khác không khi đầu ra đã đóng gói vượt quá số token này. Hoạt động như một biện pháp bảo vệ cho giới hạn ngữ cảnh CI/agent; đầu ra vẫn được tạo ra | Không đặt |
 | `output.topFilesLength`          | Số file hàng đầu để hiển thị trong tóm tắt. Nếu đặt thành 0, sẽ không hiển thị tóm tắt                                     | `5`                    |
 | `output.includeEmptyDirectories` | Có nên bao gồm các thư mục trống trong cấu trúc repository hay không                                                       | `false`                |
 | `output.includeFullDirectoryStructure` | Khi sử dụng mẫu `include`, có nên hiển thị cây thư mục hoàn chỉnh (tuân theo mẫu ignore) trong khi vẫn chỉ xử lý các file được bao gồm hay không. Cung cấp ngữ cảnh repository đầy đủ cho phân tích AI | `false`                |
@@ -147,11 +156,15 @@ Bạn có thể bật xác thực schema cho file cấu hình của mình bằng
 {
   "$schema": "https://repomix.com/schemas/latest/schema.json",
   "input": {
-    "maxFileSize": 50000000
+    "maxFileSize": 50000000,
+    // "processors": [
+    //   { "pattern": "**/*.json", "command": "npx @toon-format/cli {file}" }
+    // ]
   },
   "output": {
     "filePath": "repomix-output.xml",
     "style": "xml",
+    "filePathStyle": "target-relative",
     "parsableStyle": false,
     "compress": false,
     "headerText": "Thông tin header tùy chỉnh cho file đã đóng gói.",
@@ -162,6 +175,10 @@ Bạn có thể bật xác thực schema cho file cấu hình của mình bằng
     "removeEmptyLines": false,
     "topFilesLength": 5,
     "showLineNumbers": false,
+    // "patterns": [
+    //   { "pattern": "docs/**/*", "compress": true },
+    //   { "pattern": "website/**/*", "directoryStructureOnly": true }
+    // ],
     "truncateBase64": false,
     "copyToClipboard": false,
     "includeEmptyDirectories": false,
@@ -269,6 +286,93 @@ Lợi ích chính:
 - Loại bỏ function body và chi tiết triển khai
 
 Để biết thêm chi tiết và ví dụ, hãy xem [Hướng dẫn Nén Mã](code-compress).
+
+### Mức độ Bao gồm theo Từng File
+
+Trong khi `output.compress` áp dụng một mức duy nhất cho mọi file, `output.patterns` cho phép bạn kiểm soát mức độ chi tiết **theo từng glob** từ file cấu hình của mình. Mỗi mục nhắm đến các file bằng glob (khớp theo cùng cách như `include`/`ignore`) và ghi đè cài đặt `output.compress` toàn cục cho các file khớp.
+
+```json5
+{
+  "output": {
+    "compress": false, // mặc định toàn cục đóng vai trò là phương án bao quát
+    "patterns": [
+      { "pattern": "docs/**/*", "compress": true },
+      { "pattern": "website/**/*", "directoryStructureOnly": true }
+    ]
+  }
+}
+```
+
+Mỗi file được phân giải về một trong ba mức:
+
+- **Nội dung đầy đủ** (mặc định): toàn bộ nội dung của file được bao gồm.
+- **Đã nén** (`compress: true`): nội dung được đưa qua cùng pipeline Tree-sitter như `output.compress`.
+- **Chỉ cấu trúc thư mục** (`directoryStructureOnly: true`): file được liệt kê trong cấu trúc thư mục, nhưng khối nội dung của nó bị bỏ hoàn toàn khỏi đầu ra.
+
+Các quy tắc:
+
+- Các mẫu được đánh giá theo thứ tự trong mảng và **mẫu khớp đầu tiên sẽ thắng** đối với một file nhất định.
+- Các cờ của mẫu khớp sẽ ghi đè cài đặt `output.compress` toàn cục. Một mẫu khớp mà không đặt cờ nào sẽ buộc **nội dung đầy đủ** cho file đó, điều này hữu ích để đưa các file vào danh sách trắng khỏi một `compress` toàn cục.
+- `directoryStructureOnly` được ưu tiên hơn `compress` khi cả hai cùng được đặt trên một mẫu.
+- Nếu không có mẫu nào khớp, hành vi toàn cục sẽ được áp dụng (nội dung đầy đủ, hoặc đã nén khi `output.compress` là `true`).
+
+Tùy chọn này chỉ có trong file cấu hình; không có tùy chọn CLI tương đương.
+
+### Bộ xử lý File
+
+`input.processors` chạy một lệnh bên ngoài để chuyển đổi nội dung file **trước khi** đóng gói. Mỗi mục nhắm đến các file bằng glob (khớp theo cùng cách như `include`/`ignore`) và thay thế nội dung của các file khớp bằng đầu ra chuẩn (standard output) của lệnh đó. Điều này hữu ích cho các phép biến đổi giảm token hoặc chuyển đổi định dạng, ví dụ chuyển đổi JSON sang [TOON](https://github.com/toon-format/toon), minify SVG, hoặc chuyển đổi notebook thành script thuần túy.
+
+```json5
+{
+  "input": {
+    "processors": [
+      {
+        "pattern": "**/*.json",
+        "command": "npx @toon-format/cli {file}"
+      }
+    ]
+  }
+}
+```
+
+Cách hoạt động:
+
+- Repomix ghi nội dung của mỗi file khớp vào một file tạm và thay thế đường dẫn của nó vào chỗ placeholder `{file}` trong lệnh (placeholder này là **bắt buộc**).
+- Lệnh được chạy thông qua shell, vì vậy pipe và các công cụ như `npx` đều hoạt động được. Đầu ra chuẩn của nó trở thành nội dung mới của file, sau đó tiếp tục đi qua phần còn lại của pipeline (kiểm tra bảo mật, đếm token và tạo đầu ra) giống như bất kỳ file nào khác.
+- Các mẫu được đánh giá theo thứ tự trong mảng và **mẫu khớp đầu tiên sẽ thắng** — một file chỉ được biến đổi bởi tối đa một bộ xử lý (không có chaining).
+
+Các tùy chọn theo từng bộ xử lý:
+
+- `timeout`: Thời gian tối đa tính bằng mili giây để chờ lệnh. Mặc định: `60000` (60 giây). Lưu ý rằng `npx` có thể cần thêm thời gian để tải một package khi cache còn "nguội" (cold cache).
+- `onError`: Hành động khi lệnh thoát với trạng thái khác 0 hoặc hết thời gian chờ. `"fail"` (mặc định) sẽ hủy toàn bộ quá trình pack; `"skip"` ghi lại cảnh báo và quay về sử dụng nội dung gốc của file.
+
+Ví dụ lệnh (mỗi lệnh là một giá trị `command` được ghép với một `pattern` phù hợp):
+
+| Mẫu | `command` | Chức năng |
+| --- | --- | --- |
+| `**/*.json` | `jq -c . {file}` | Nén JSON bằng cách loại bỏ khoảng trắng |
+| `**/*.json` | `npx @toon-format/cli {file}` | Chuyển đổi JSON sang [TOON](https://github.com/toon-format/toon), một định dạng gọn nhẹ và tiết kiệm token |
+| `**/*.svg` | `npx svgo -i {file} -o -` | Rút gọn SVG |
+| `**/*.ipynb` | `jupyter nbconvert --to script --stdout {file}` | Chuyển đổi notebook Jupyter thành một script Python thuần |
+
+Vì mẫu khớp đầu tiên sẽ thắng, chỉ áp dụng một bộ xử lý cho mỗi file — ví dụ chọn `jq` hoặc bộ chuyển đổi TOON cho `**/*.json`. Lệnh phải ghi nội dung đã chuyển đổi ra đầu ra chuẩn, và công cụ mà nó gọi phải có sẵn trong `PATH` của bạn (các lệnh dựa trên `npx` sẽ tải công cụ về trong lần sử dụng đầu tiên).
+
+::: warning Bảo mật
+Bộ xử lý file chạy các **lệnh tùy ý** từ file cấu hình của bạn, vì vậy chúng tuân theo một mô hình tin cậy nghiêm ngặt:
+
+- Chỉ chạy **cho các lần chạy CLI cục bộ**, nơi Repomix giả định rằng cấu hình trong thư mục làm việc của bạn là của chính bạn — cùng ranh giới tin cậy như một npm script hoặc một Makefile. Tương tự, nếu bạn chạy `repomix` bên trong một repository lấy từ người khác **mà không xem xét `repomix.config.json` của nó trước**, các lệnh bộ xử lý của nó sẽ được thực thi trên máy của bạn. Hãy xem xét cấu hình của các repository không đáng tin cậy trước khi pack chúng.
+- **Bị vô hiệu hóa** đối với library API (`pack()` / `runCli()`), MCP server, và [repomix.com](https://repomix.com) được host, vì vậy không cái nào trong số này có thể chạy lệnh từ một cấu hình.
+- Đối với repository từ xa (`--remote`), cấu hình của repository đã clone — và do đó các bộ xử lý của nó — chỉ được tin cậy khi bạn truyền rõ ràng `--remote-trust-config`. Nếu không có nó, cấu hình từ xa thậm chí không được tải.
+
+Các bộ xử lý đang hoạt động được ghi log khi khởi động để các bộ xử lý bất ngờ từ một cấu hình lạ có thể được nhìn thấy. Vì lệnh được in ra khi khởi động và trong các thông báo lỗi, hãy tham chiếu thông tin xác thực thông qua biến môi trường (ví dụ: `$TOKEN`), vốn được ghi log mà không mở rộng giá trị, thay vì gắn trực tiếp chúng vào lệnh.
+:::
+
+Ghi chú:
+
+- Không nên kết hợp một bộ xử lý **làm thay đổi định dạng** với `output.compress`, `output.removeComments`, hoặc `compress` trong `output.patterns` trên cùng một file: các bước này được chọn dựa trên phần mở rộng gốc của file, do đó chúng sẽ chạy sai trình xử lý ngôn ngữ trên nội dung đã biến đổi. Vì lý do tương tự, đầu ra Markdown gắn nhãn khối mã theo phần mở rộng gốc (ví dụ: file JSON→TOON được đánh dấu là `json`). Việc nén là best-effort và sẽ âm thầm quay về nội dung đã biến đổi khi phân tích cú pháp thất bại.
+- Với `--watch`, các file khớp sẽ được xử lý lại ở mỗi lần rebuild, khiến lệnh được chạy lại mỗi lần.
+- Khi hết thời gian chờ, Repomix sẽ chấm dứt shell của lệnh; một lệnh tự tạo ra các tiến trình nền (background process) tồn tại lâu dài của riêng nó có thể khiến chúng tiếp tục chạy.
+- Bộ xử lý chỉ nhìn thấy các file văn bản (file nhị phân bị loại trừ trước khi xử lý), và đầu ra của chúng được đọc dưới dạng UTF-8.
 
 ### Tích hợp Git
 

@@ -22,6 +22,7 @@ export const configIt = defineConfig({
             { text: 'Utilizzo Base', link: '/it/guide/usage' },
             { text: 'Esempi di Prompt', link: '/it/guide/prompt-examples' },
             { text: "Casi d'Uso", link: '/it/guide/use-cases' },
+            { text: 'FAQ e risoluzione dei problemi', link: '/it/guide/faq' },
           ],
         },
         {
@@ -29,6 +30,7 @@ export const configIt = defineConfig({
           items: [
             { text: 'Formati di Output', link: '/it/guide/output' },
             { text: 'Opzioni da Linea di Comando', link: '/it/guide/command-line-options' },
+            { text: 'Modalità Watch', link: '/it/guide/watch-mode' },
             { text: 'Configurazione', link: '/it/guide/configuration' },
             { text: 'Istruzioni Personalizzate', link: '/it/guide/custom-instructions' },
             { text: 'Elaborazione Repository Remoti', link: '/it/guide/remote-repository-processing' },
