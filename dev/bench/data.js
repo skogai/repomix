@@ -1,6 +1,6 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777212421548,
-  "repoUrl": "https://github.com/yamadashy/repomix",
+  "lastUpdate": 1794658186504,
+  "repoUrl": "https://github.com/skogai/repomix",
   "entries": {
     "Repomix Performance": [
       {
@@ -4095,6 +4095,51 @@ window.BENCHMARK_DATA = {
             "range": "±25",
             "unit": "ms",
             "extra": "Median of 20 runs\nQ1: 1784ms, Q3: 1809ms\nAll times: 1776, 1777, 1779, 1780, 1783, 1784, 1784, 1785, 1786, 1786, 1787, 1793, 1794, 1799, 1808, 1809, 1812, 1818, 1821, 1875ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "emil@skogsund.se",
+            "name": "Emil Skogsund",
+            "username": "Skogix"
+          },
+          "committer": {
+            "email": "emil@skogsund.se",
+            "name": "Emil Skogsund",
+            "username": "Skogix"
+          },
+          "distinct": true,
+          "id": "94ebfa933ebbc8974fc30a1474d215e176d0cada",
+          "message": "Merge remote-tracking branch 'upstream/main'",
+          "timestamp": "2026-11-14T13:07:50+01:00",
+          "tree_id": "a724396a77373a60137ff44a600bc681d56b1b30",
+          "url": "https://github.com/skogai/repomix/commit/94ebfa933ebbc8974fc30a1474d215e176d0cada"
+        },
+        "date": 1794658185778,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "Repomix Pack (macOS)",
+            "value": 1119,
+            "range": "±376",
+            "unit": "ms",
+            "extra": "Median of 30 runs\nQ1: 958ms, Q3: 1334ms\nAll times: 772, 842, 844, 907, 914, 937, 938, 958, 974, 984, 985, 1036, 1075, 1101, 1105, 1119, 1184, 1189, 1207, 1228, 1247, 1252, 1334, 1351, 1434, 1435, 1523, 1568, 1650, 1974ms"
+          },
+          {
+            "name": "Repomix Pack (Linux)",
+            "value": 1044,
+            "range": "±31",
+            "unit": "ms",
+            "extra": "Median of 20 runs\nQ1: 1030ms, Q3: 1061ms\nAll times: 1018, 1022, 1026, 1027, 1030, 1030, 1036, 1036, 1038, 1042, 1044, 1045, 1045, 1048, 1051, 1061, 1070, 1117, 1152, 1153ms"
+          },
+          {
+            "name": "Repomix Pack (Windows)",
+            "value": 700,
+            "range": "±13",
+            "unit": "ms",
+            "extra": "Median of 20 runs\nQ1: 696ms, Q3: 709ms\nAll times: 689, 689, 692, 692, 695, 696, 697, 697, 697, 698, 700, 702, 704, 704, 708, 709, 709, 712, 716, 718ms"
           }
         ]
       }
